@@ -1,0 +1,35 @@
+{
+    // C++ Configuration
+    // Основные настройки в .vscode/c_cpp_properties.json
+    // Используем compile_commands.json из CMake
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/compile_commands.json",
+    
+    // CMake Configuration
+    "cmake.configureOnOpen": false,
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.generator": "Ninja",
+    "cmake.configureSettings": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_OPENCL": "ON",
+        "ENABLE_CUDA": "OFF"
+    },
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    
+    // Files
+    "files.exclude": {
+        "**/build": false,
+        "**/.git": true
+    },
+    
+    // Editor
+    "editor.formatOnSave": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    
+    // Terminal
+    "terminal.integrated.defaultProfile.linux": "bash",
+    
+    // IntelliSense
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.autocomplete": "default"
+}

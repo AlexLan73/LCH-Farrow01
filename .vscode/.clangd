@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: [-I/usr/include/CL, -I/home/alex/C++/LCH-Farrow/include/CL]

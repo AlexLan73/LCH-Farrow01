@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug LCH-Farrow (CMake Presets)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/LCH-Farrow.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "preLaunchTask": "build",
+            "environment": []
+        },
+        {
+            "name": "Debug LCH-Farrow (CMake Presets) --copy-to-host",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/LCH-Farrow.exe",
+            "args": ["--copy-to-host"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "preLaunchTask": "build",
+            "environment": []
+        }
+    ]
+}

@@ -1,0 +1,43 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}",
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/include/GPU",
+                "${workspaceFolder}/include/interface",
+                "${workspaceFolder}/clFFT/include",
+                "/usr/include",
+                "/usr/include/CL",
+                "/usr/local/include"
+//                "/home/alex/C++/LCH-Farrow01/include",
+//                "/home/alex/C++/LCH-Farrow01/include/GPU",
+//                "/home/alex/C++/LCH-Farrow01/include/interface",
+            ],
+            "defines": [
+                "OPENCL_ENABLED=1",
+                "CLFFT_FOUND=1",
+                "CUDA_ENABLED=0"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": "${workspaceFolder}/compile_commands.json",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${workspaceFolder}/include",
+                    "${workspaceFolder}/include/GPU",
+                    "${workspaceFolder}/include/interface",
+                    "${workspaceFolder}/clFFT/include",
+                    "/usr/include",
+                    "/usr/local/include"
+                ],
+                "limitSymbolsToIncludedHeaders": false
+            }
+        }
+    ],
+    "version": 4
+}
