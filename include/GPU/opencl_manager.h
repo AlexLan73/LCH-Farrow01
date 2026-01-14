@@ -8,6 +8,11 @@
 #include <memory>
 #include <stdexcept>
 
+// Forward declaration (полное определение в gpu_memory_manager.hpp)
+namespace gpu {
+    class GPUMemoryBuffer;
+    enum class MemoryType;
+}
 
 namespace gpu {
 
@@ -123,6 +128,74 @@ public:
     std::string GetDeviceInfo() const;
 
     // ═══════════════════════════════════════════════════════════════
+    // GPU MEMORY MANAGEMENT
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * @brief Create new GPU buffer (OWNING)
+     * @param num_elements Number of complex<float> elements
+     * @param type Memory type (READ_ONLY, WRITE_ONLY, READ_WRITE)
+     * @return unique_ptr to GPUMemoryBuffer
+     */
+    std::unique_ptr<GPUMemoryBuffer> CreateBuffer(
+        size_t num_elements,
+        MemoryType type
+    );
+
+    /**
+     * @brief Wrap external GPU buffer (NON-OWNING)
+     * 
+     * Automatically validates that external buffer belongs to correct context.
+     * Throws if context mismatch detected.
+     * 
+     * @param external_gpu_buffer Existing cl_mem buffer
+     * @param num_elements Number of complex<float> elements
+     * @param type Memory type
+     * @return unique_ptr to GPUMemoryBuffer wrapper
+     * @throws std::runtime_error if context mismatch
+     */
+    std::unique_ptr<GPUMemoryBuffer> WrapExternalBuffer(
+        cl_mem external_gpu_buffer,
+        size_t num_elements,
+        MemoryType type
+    );
+
+    /**
+     * @brief Register buffer for reuse (by name)
+     * @param name Unique name for buffer
+     * @param buffer Shared pointer to buffer (will be stored as weak_ptr)
+     */
+    void RegisterBuffer(
+        const std::string& name,
+        std::shared_ptr<GPUMemoryBuffer> buffer
+    );
+
+    /**
+     * @brief Get registered buffer by name
+     * @param name Buffer name
+     * @return shared_ptr to buffer, or nullptr if not found/expired
+     */
+    std::shared_ptr<GPUMemoryBuffer> GetBuffer(const std::string& name);
+
+    /**
+     * @brief Get or create buffer (creates if not exists, returns if exists)
+     * @param name Buffer name
+     * @param num_elements Number of elements (used only if creating new)
+     * @param type Memory type (used only if creating new)
+     * @return shared_ptr to buffer
+     */
+    std::shared_ptr<GPUMemoryBuffer> GetOrCreateBuffer(
+        const std::string& name,
+        size_t num_elements,
+        MemoryType type
+    );
+
+    /**
+     * @brief Get memory management statistics
+     */
+    void PrintMemoryStatistics() const;
+
+    // ═══════════════════════════════════════════════════════════════
     // DESTRUCTOR
     // ═══════════════════════════════════════════════════════════════
 
@@ -156,6 +229,18 @@ private:
     size_t cache_misses_{0};
 
     // ═══════════════════════════════════════════════════════════════
+    // GPU MEMORY MANAGEMENT (PRIVATE)
+    // ═══════════════════════════════════════════════════════════════
+
+    // Buffer registry for reuse
+    std::unordered_map<std::string, std::weak_ptr<GPUMemoryBuffer>> buffer_registry_;
+    mutable std::mutex registry_mutex_;
+
+    // Memory statistics
+    size_t total_allocated_bytes_{0};
+    size_t num_buffers_{0};
+
+    // ═══════════════════════════════════════════════════════════════
     // PRIVATE METHODS
     // ═══════════════════════════════════════════════════════════════
 
@@ -175,6 +260,12 @@ private:
      * @brief Release all OpenCL resources
      */
     void ReleaseResources();
+
+    /**
+     * @brief Validate external buffer context (helper)
+     * @throws std::runtime_error if context mismatch
+     */
+    void ValidateBufferContext(cl_mem external_buffer) const;
 };
 
 } // namespace gpu

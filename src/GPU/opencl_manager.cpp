@@ -1,10 +1,12 @@
 
 #include "GPU/opencl_manager.h"
+#include "GPU/gpu_memory_manager.hpp"
 #include <iostream>
 #include <sstream>
 #include <functional>
 #include <vector>
 #include <cstring>
+#include <iomanip>
 
 namespace gpu {
 
@@ -265,6 +267,158 @@ OpenCLManager::~OpenCLManager() {
     if (initialized_) {
         ReleaseResources();
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GPU MEMORY MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════
+
+std::unique_ptr<GPUMemoryBuffer> OpenCLManager::CreateBuffer(
+    size_t num_elements,
+    MemoryType type) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    auto buffer = std::make_unique<GPUMemoryBuffer>(
+        context_,
+        queue_,
+        num_elements,
+        type
+    );
+
+    {
+        std::unique_lock<std::mutex> lock(registry_mutex_);
+        total_allocated_bytes_ += buffer->GetSizeBytes();
+        num_buffers_++;
+    }
+
+    return buffer;
+}
+
+std::unique_ptr<GPUMemoryBuffer> OpenCLManager::WrapExternalBuffer(
+    cl_mem external_gpu_buffer,
+    size_t num_elements,
+    MemoryType type) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    // Validate that external buffer belongs to correct context
+    ValidateBufferContext(external_gpu_buffer);
+
+    auto buffer = std::make_unique<GPUMemoryBuffer>(
+        context_,
+        queue_,
+        external_gpu_buffer,
+        num_elements,
+        type
+    );
+
+    // Don't count external buffers in statistics
+
+    return buffer;
+}
+
+void OpenCLManager::ValidateBufferContext(cl_mem external_buffer) const {
+    if (!external_buffer) {
+        throw std::runtime_error("Invalid external buffer: nullptr");
+    }
+
+    cl_context buffer_context = nullptr;
+    cl_int err = clGetMemObjectInfo(
+        external_buffer,
+        CL_MEM_CONTEXT,
+        sizeof(cl_context),
+        &buffer_context,
+        nullptr
+    );
+
+    if (err != CL_SUCCESS) {
+        throw std::runtime_error(
+            "Failed to get buffer context: " + std::to_string(err)
+        );
+    }
+
+    if (buffer_context != context_) {
+        throw std::runtime_error(
+            "External buffer belongs to different context. "
+            "All buffers must be created through OpenCLManager::CreateBuffer() "
+            "or belong to the same context as OpenCLManager. "
+            "Error code: CL_INVALID_CONTEXT (-34)"
+        );
+    }
+}
+
+void OpenCLManager::RegisterBuffer(
+    const std::string& name,
+    std::shared_ptr<GPUMemoryBuffer> buffer) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    std::unique_lock<std::mutex> lock(registry_mutex_);
+    buffer_registry_[name] = buffer;  // weak_ptr автоматически создается
+}
+
+std::shared_ptr<GPUMemoryBuffer> OpenCLManager::GetBuffer(const std::string& name) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    std::unique_lock<std::mutex> lock(registry_mutex_);
+    auto it = buffer_registry_.find(name);
+    
+    if (it == buffer_registry_.end()) {
+        return nullptr;
+    }
+
+    // Попытаться получить shared_ptr из weak_ptr
+    return it->second.lock();
+}
+
+std::shared_ptr<GPUMemoryBuffer> OpenCLManager::GetOrCreateBuffer(
+    const std::string& name,
+    size_t num_elements,
+    MemoryType type) {
+    // Попытаться получить существующий
+    auto existing = GetBuffer(name);
+    if (existing) {
+        return existing;
+    }
+
+    // Создать новый
+    auto new_buffer = CreateBuffer(num_elements, type);
+    auto shared_buffer = std::shared_ptr<GPUMemoryBuffer>(new_buffer.release());
+    
+    // Зарегистрировать
+    RegisterBuffer(name, shared_buffer);
+    
+    return shared_buffer;
+}
+
+void OpenCLManager::PrintMemoryStatistics() const {
+    if (!initialized_) {
+        std::cout << "[WARNING] OpenCLManager not initialized\n";
+        return;
+    }
+
+    std::unique_lock<std::mutex> lock(registry_mutex_);
+
+    std::cout << "\nGPU Memory Statistics:\n";
+    std::cout << "  Total Allocated: " << std::fixed << std::setprecision(2)
+              << (total_allocated_bytes_ / (1024.0 * 1024.0)) << " MB\n";
+    std::cout << "  Active Buffers:  " << num_buffers_ << "\n";
+    std::cout << "  Registered Buffers: " << buffer_registry_.size() << "\n";
+    
+    // Подсчитать активные (не expired) буферы
+    size_t active_registered = 0;
+    for (const auto& [name, weak_buf] : buffer_registry_) {
+        if (!weak_buf.expired()) {
+            active_registered++;
+        }
+    }
+    std::cout << "  Active Registered: " << active_registered << "\n";
 }
 
 } // namespace gpu
