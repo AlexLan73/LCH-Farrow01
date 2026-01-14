@@ -7,9 +7,8 @@
 #include "GPU/opencl_manager.h"
 #include "interface/lfm_parameters.h"
 #include "Test/t_generator.hpp"
-//#include "Test/t_gpu_mem_buffer.hpp"
 #include "GPU/gpu_memory_manager.hpp"
-
+#include "Test/examples_clean.hpp"
 
 int inicial_opencl_manager(){
   try {
@@ -81,6 +80,7 @@ int main() {
 //    t_generator_->gpu_to_cpu(signal_delay_);
 
     gpu::GPUMemoryManager::Initialize();
+    examples::RunAllExamples();
 
     return 0;
 }

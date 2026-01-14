@@ -83,11 +83,13 @@ inline void Example2_ReadFromGenerator() {
     try {
         // 1. Создать генератор (имеет свои GPU буферы)
         LFMParameters params;
-        params.f_start = 1e9;
-        params.f_stop = 1.1e9;
-        params.sample_rate = 10e9;
+        params.f_start = 0.4e6;
+        params.f_stop = 0.5e6;
+        params.sample_rate = 12e6;
         params.num_beams = 256;
-        params.duration = 1e-3;  // 1 ms
+//        params.duration = 1e-3;  // 1 ms
+        params.count_points = 1024*8;  // 
+        auto xx = params.IsValid();
 
         auto gen_gpu = std::make_shared<radar::GeneratorGPU>(params);
 
@@ -165,7 +167,7 @@ inline void Example3_MultipleBuffers() {
 // ПОЛНЫЙ ПРИМЕР: main()
 // ════════════════════════════════════════════════════════════════════════════
 
-inline void RunAllExamples() {
+void RunAllExamples() {
     try {
         // Инициализация
         InitializeGPU();

@@ -144,6 +144,84 @@ std::vector<std::complex<float>> GPUMemoryBuffer::ReadFromGPU() {
     return ReadPartial(num_elements_);
 }
 
+
+std::vector<std::complex<float>> GPUMemoryBuffer::ReadPartial(size_t num_elements) {
+    if (num_elements > num_elements_) {
+        throw std::runtime_error("Reading more elements than buffer size");
+    }
+
+    std::vector<std::complex<float>> result(num_elements);
+
+    // clEnqueueReadBuffer сигнатура:
+    // cl_int clEnqueueReadBuffer(
+    //     cl_command_queue command_queue,
+    //     cl_mem buffer,
+    //     cl_bool blocking_read,
+    //     size_t offset,
+    //     size_t cb,
+    //     void *ptr,
+    //     cl_uint num_events_in_wait_list,    <- ВСЕГДА 0 для простых случаев
+    //     const cl_event *event_wait_list,    <- ВСЕГДА nullptr
+    //     cl_event *event                     <- ВСЕГДА nullptr
+    // )
+
+    cl_int error = clEnqueueReadBuffer(
+        queue_,                    // command_queue
+        gpu_buffer_,               // buffer
+        CL_TRUE,                   // blocking_read (ждём завершения)
+        0,                         // offset (начинаем с 0)
+        num_elements * sizeof(std::complex<float>),  // cb - размер в байтах
+        result.data(),             // ptr - куда читать
+        0,                         // num_events_in_wait_list
+        nullptr,                   // event_wait_list
+        nullptr                    // event
+    );
+
+    CheckCLError(error, "clEnqueueReadBuffer");
+    gpu_dirty_ = false;
+
+    return result;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Записать данные на GPU
+// ════════════════════════════════════════════════════════════════════════════
+
+void GPUMemoryBuffer::WriteToGPU(const std::vector<std::complex<float>>& data) {
+    if (data.size() > num_elements_) {
+        throw std::runtime_error("Writing more data than buffer size");
+    }
+
+    // clEnqueueWriteBuffer сигнатура:
+    // cl_int clEnqueueWriteBuffer(
+    //     cl_command_queue command_queue,
+    //     cl_mem buffer,
+    //     cl_bool blocking_write,
+    //     size_t offset,
+    //     size_t cb,
+    //     const void *ptr,
+    //     cl_uint num_events_in_wait_list,
+    //     const cl_event *event_wait_list,
+    //     cl_event *event
+    // )
+
+    cl_int error = clEnqueueWriteBuffer(
+        queue_,                    // command_queue
+        gpu_buffer_,               // buffer
+        CL_TRUE,                   // blocking_write (ждём завершения)
+        0,                         // offset
+        data.size() * sizeof(std::complex<float>),  // cb - размер в байтах
+        data.data(),               // ptr - откуда писать
+        0,                         // num_events_in_wait_list
+        nullptr,                   // event_wait_list
+        nullptr                    // event
+    );
+
+    CheckCLError(error, "clEnqueueWriteBuffer");
+    gpu_dirty_ = true;
+}
+
+/*
 std::vector<std::complex<float>> GPUMemoryBuffer::ReadPartial(size_t num_elements) {
     if (num_elements > num_elements_) {
         throw std::runtime_error("Reading more elements than buffer size");
@@ -189,7 +267,7 @@ void GPUMemoryBuffer::WriteToGPU(const std::vector<std::complex<float>>& data) {
     CheckCLError(error, "clEnqueueWriteBuffer");
     gpu_dirty_ = true;
 }
-
+*/
 void GPUMemoryBuffer::PrintStats() const {
     std::cout << "GPUMemoryBuffer Stats:\n";
     std::cout << "  Num Elements:   " << num_elements_ << "\n";
