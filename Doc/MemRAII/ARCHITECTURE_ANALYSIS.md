@@ -21,9 +21,9 @@
    - Обертывает внешние буферы
 
 3. **GeneratorGPU** (обычный класс)
-   - ❌ **ПРОБЛЕМА**: Создает СВОЙ context/queue
-   - НЕ использует OpenCLManager
-   - Возвращает cl_mem буферы из своего context
+   - ✅ **ИСПРАВЛЕНО**: Теперь использует context/queue из OpenCLManager
+   - Получает ресурсы через `OpenCLManager::GetInstance()`
+   - Возвращает cl_mem буферы из того же context, что и OpenCLManager
 
 ---
 

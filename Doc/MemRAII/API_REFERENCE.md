@@ -152,6 +152,91 @@ void PrintStats() const;
 
 ---
 
+## 🔧 Kernel Caching API
+
+### `GetOrCreateKernel(cl_program program, const std::string& kernel_name)`
+
+Получить или создать kernel из программы с автоматическим кэшированием.
+
+**Параметры:**
+- `program` - OpenCL program (из `GetOrCompileProgram`)
+- `kernel_name` - Имя kernel функции в программе
+
+**Возвращает:** `cl_kernel` (не освобождайте вручную!)
+
+**Пример:**
+```cpp
+cl_program program = manager.GetOrCompileProgram(source);
+cl_kernel kernel = manager.GetOrCreateKernel(program, "my_kernel");
+// При повторном вызове вернется закэшированный kernel
+```
+
+---
+
+### `GetKernelCacheStatistics() const`
+
+Получить статистику кэша kernels.
+
+**Возвращает:** `std::string` с информацией о размере кэша, hits/misses, hit rate
+
+**Пример:**
+```cpp
+std::cout << manager.GetKernelCacheStatistics();
+// Output:
+// Kernel Cache Statistics:
+//   Cache size: 10 kernels
+//   Cache hits: 45
+//   Cache misses: 10
+//   Hit rate: 81.8%
+```
+
+---
+
+### `ClearKernelCache()`
+
+Очистить весь кэш kernels. Полезно для долгоживущих программ с большим количеством kernels.
+
+**Пример:**
+```cpp
+// Периодическая очистка
+if (manager.GetKernelCacheSize() > 100) {
+    manager.ClearKernelCache();
+}
+```
+
+---
+
+### `ClearKernelsForProgram(cl_program program)`
+
+Очистить все kernels, созданные из конкретного program.
+
+**Параметры:**
+- `program` - OpenCL program, чьи kernels нужно очистить
+
+**Пример:**
+```cpp
+cl_program program = manager.GetOrCompileProgram(source);
+// ... использовать kernels из program ...
+// Когда program больше не нужен:
+manager.ClearKernelsForProgram(program);
+```
+
+---
+
+### `GetKernelCacheSize() const`
+
+Получить текущее количество kernels в кэше.
+
+**Возвращает:** `size_t`
+
+**Пример:**
+```cpp
+size_t num_kernels = manager.GetKernelCacheSize();
+std::cout << "Cached kernels: " << num_kernels << "\n";
+```
+
+---
+
 ## 📝 Примеры использования
 
 ### Пример 1: Базовое использование
@@ -219,8 +304,38 @@ auto wrapper = gpu::OpenCLManager::GetInstance().WrapExternalBuffer(
 auto data = wrapper->ReadFromGPU();
 ```
 
+### Пример 4: Работа с большим количеством kernels
+
+```cpp
+auto& manager = gpu::OpenCLManager::GetInstance();
+
+// Создать несколько programs
+cl_program program1 = manager.GetOrCompileProgram(source1);
+cl_program program2 = manager.GetOrCompileProgram(source2);
+
+// Создать множество kernels
+std::vector<cl_kernel> kernels;
+for (int i = 0; i < 50; ++i) {
+    std::string kernel_name = "kernel_" + std::to_string(i);
+    kernels.push_back(manager.GetOrCreateKernel(program1, kernel_name));
+}
+
+// Мониторинг размера кэша
+if (manager.GetKernelCacheSize() > 100) {
+    std::cout << "Cache size: " << manager.GetKernelCacheSize() << "\n";
+    manager.ClearKernelCache();
+}
+
+// Очистка kernels конкретного program
+manager.ClearKernelsForProgram(program1);
+
+// Статистика
+std::cout << manager.GetKernelCacheStatistics();
+```
+
 ---
 
 **Автор**: AI Assistant (Кодо)  
-**Дата**: 2026-01-10
+**Дата**: 2026-01-10  
+**Обновлено**: Добавлен раздел Kernel Caching для масштабирования
 

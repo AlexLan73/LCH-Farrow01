@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "generator/generator_gpu.h"
+#include "GPU/opencl_manager.h"
 //#include "lfm_parameters.h"
 namespace radar {
 
@@ -42,11 +43,19 @@ GeneratorGPU::GeneratorGPU(const LFMParameters& params)
 
 GeneratorGPU::~GeneratorGPU() {
     // Освобождение OpenCL ресурсов
-    if (kernel_lfm_basic_ != nullptr) clReleaseKernel(kernel_lfm_basic_);
-    if (kernel_lfm_delayed_ != nullptr) clReleaseKernel(kernel_lfm_delayed_);
-    if (program_ != nullptr) clReleaseProgram(program_);
-    if (queue_ != nullptr) clReleaseCommandQueue(queue_);
-    if (context_ != nullptr) clReleaseContext(context_);
+    // ⚠️ ВАЖНО: 
+    // - context_ и queue_ принадлежат OpenCLManager, НЕ освобождаем!
+    // - program_ и kernels кэшируются в OpenCLManager, НЕ освобождаем!
+    // OpenCLManager сам управляет их жизненным циклом
+    
+    // Просто обнуляем указатели
+    kernel_lfm_basic_ = nullptr;
+    kernel_lfm_delayed_ = nullptr;
+    program_ = nullptr;
+    // НЕ вызываем clReleaseKernel() - kernels кэшируются в OpenCLManager
+    // НЕ вызываем clReleaseProgram() - program кэшируется в OpenCLManager
+    // НЕ вызываем clReleaseCommandQueue(queue_) - queue_ принадлежит OpenCLManager
+    // НЕ вызываем clReleaseContext(context_) - context_ принадлежит OpenCLManager
 }
 
 // Move semantics
@@ -75,11 +84,14 @@ GeneratorGPU::GeneratorGPU(GeneratorGPU&& other) noexcept
 GeneratorGPU& GeneratorGPU::operator=(GeneratorGPU&& other) noexcept {
     if (this != &other) {
         // Освободить текущие ресурсы
-        if (queue_) clReleaseCommandQueue(queue_);
-        if (program_) clReleaseProgram(program_);
-        if (kernel_lfm_basic_) clReleaseKernel(kernel_lfm_basic_);
-        if (kernel_lfm_delayed_) clReleaseKernel(kernel_lfm_delayed_);
-        if (context_) clReleaseContext(context_);
+        // ⚠️ ВАЖНО: 
+        // - context_ и queue_ принадлежат OpenCLManager, НЕ освобождаем!
+        // - program_ и kernels кэшируются в OpenCLManager, НЕ освобождаем!
+        // Просто обнуляем указатели
+        program_ = nullptr;
+        kernel_lfm_basic_ = nullptr;
+        kernel_lfm_delayed_ = nullptr;
+        // НЕ вызываем clRelease*() - ресурсы управляются OpenCLManager
         
         // Переместить ресурсы
         platform_ = other.platform_;
@@ -111,48 +123,25 @@ GeneratorGPU& GeneratorGPU::operator=(GeneratorGPU&& other) noexcept {
 // ═════════════════════════════════════════════════════════════════════
 
 void GeneratorGPU::InitializeOpenCL() {
-    cl_int err = CL_SUCCESS;
+    // ✅ ИСПРАВЛЕНО: Используем OpenCLManager вместо создания своего context/queue
     
-    // 1. Получить платформу
-    cl_uint num_platforms = 0;
-    clGetPlatformIDs(0, nullptr, &num_platforms);
-    
-    if (num_platforms == 0) {
-        throw std::runtime_error("No OpenCL platforms found");
+    // Проверить, что OpenCLManager инициализирован
+    auto& manager = gpu::OpenCLManager::GetInstance();
+    if (!manager.IsInitialized()) {
+        throw std::runtime_error(
+            "OpenCLManager not initialized. "
+            "Call OpenCLManager::Initialize(CL_DEVICE_TYPE_GPU) before creating GeneratorGPU."
+        );
     }
     
-    std::vector<cl_platform_id> platforms(num_platforms);
-    clGetPlatformIDs(num_platforms, platforms.data(), nullptr);
-    platform_ = platforms[0];  // Используем первую платформу
+    // Получить ресурсы из OpenCLManager
+    platform_ = manager.GetPlatform();
+    device_ = manager.GetDevice();
+    context_ = manager.GetContext();
+    queue_ = manager.GetQueue();
     
-    // 2. Получить GPU устройство
-    cl_uint num_devices = 0;
-    clGetDeviceIDs(platform_, CL_DEVICE_TYPE_GPU, 0, nullptr, &num_devices);
-    
-    if (num_devices == 0) {
-        throw std::runtime_error("No GPU devices found");
-    }
-    
-    std::vector<cl_device_id> devices(num_devices);
-    clGetDeviceIDs(platform_, CL_DEVICE_TYPE_GPU, num_devices, devices.data(), nullptr);
-    device_ = devices[0];  // Используем первое GPU устройство
-    
-    // 3. Создать контекст
-    context_ = clCreateContext(nullptr, 1, &device_, nullptr, nullptr, &err);
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create OpenCL context");
-    }
-    
-    // 4. Создать очередь команд
-    // Используем clCreateCommandQueueWithProperties для OpenCL 2.0+
-    cl_queue_properties props[] = {
-        CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE,
-        0
-    };
-    queue_ = clCreateCommandQueueWithProperties(context_, device_, props, &err);
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create OpenCL command queue");
-    }
+    // ✅ Теперь GeneratorGPU использует тот же context, что и OpenCLManager!
+    // Это решает проблему ошибки -34 (CL_INVALID_CONTEXT)
 }
 
 // ✅ ИСПРАВЛЕННЫЕ МЕТОДЫ для generator_gpu.cpp
@@ -163,79 +152,23 @@ void GeneratorGPU::InitializeOpenCL() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void GeneratorGPU::CompileKernels() {
-    cl_int err = CL_SUCCESS;
+    // ✅ ИСПРАВЛЕНО: Используем кэш из OpenCLManager для программ и kernels
+    
+    auto& manager = gpu::OpenCLManager::GetInstance();
+    
+    // 1. Получить исходный код kernels
     std::string source = GetKernelSource();
-    const char* source_str = source.c_str();
-    size_t source_len = source.length();
-
-    std::cout << "🔨 Creating OpenCL program from source (" << source_len << " chars)..." << std::endl;
-
-    program_ = clCreateProgramWithSource(context_, 1, &source_str, &source_len, &err);
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create OpenCL program (err: " + 
-                                std::to_string(err) + ")");
-    }
-
-    // Компилировать kernel
-    std::cout << "⚙️  Compiling OpenCL kernel code..." << std::endl;
-    err = clBuildProgram(program_, 1, &device_, nullptr, nullptr, nullptr);
     
-    // Получить BUILD LOG (важно: размер может быть 0 даже при ошибке)
-    size_t log_size = 0;
-    clGetProgramBuildInfo(program_, device_, CL_PROGRAM_BUILD_LOG, 
-                         0, nullptr, &log_size);
+    // 2. Получить или скомпилировать программу (использует кэш!)
+    std::cout << "🔨 Getting/compiling OpenCL program (using cache)..." << std::endl;
+    program_ = manager.GetOrCompileProgram(source);
     
-    // Прочитать BUILD LOG
-    std::string build_log;
-    if (log_size > 1) {  // log_size включает null terminator
-        std::vector<char> log_buffer(log_size);
-        clGetProgramBuildInfo(program_, device_, CL_PROGRAM_BUILD_LOG, 
-                             log_size, log_buffer.data(), nullptr);
-        build_log = std::string(log_buffer.begin(), log_buffer.end());
-    }
-
-    // Проверить результат компиляции
-    if (err != CL_SUCCESS) {
-        std::string error_msg = "❌ OpenCL kernel compilation FAILED\n";
-        error_msg += "Error code: " + std::to_string(err);
-        
-        if (err == -11) {
-            error_msg += " (CL_BUILD_PROGRAM_FAILURE - Kernel syntax error)\n";
-        }
-        
-        if (!build_log.empty()) {
-            error_msg += "\n📋 BUILD LOG:\n";
-            error_msg += "═════════════════════════════════════════\n";
-            error_msg += build_log;
-            error_msg += "═════════════════════════════════════════\n";
-        }
-        
-        throw std::runtime_error(error_msg);
-    }
-
-    // Если есть warnings (но err == CL_SUCCESS)
-    if (!build_log.empty() && build_log.find("warning") != std::string::npos) {
-        std::cout << "⚠️  Compilation warnings:\n" << build_log << std::endl;
-    } else if (!build_log.empty()) {
-        std::cout << "📋 Build log:\n" << build_log << std::endl;
-    }
-
-    // Создать kernels
-    std::cout << "📦 Creating kernel objects..." << std::endl;
+    // 3. Получить или создать kernels (использует кэш!)
+    std::cout << "📦 Getting/creating kernel objects (using cache)..." << std::endl;
+    kernel_lfm_basic_ = manager.GetOrCreateKernel(program_, "kernel_lfm_basic");
+    kernel_lfm_delayed_ = manager.GetOrCreateKernel(program_, "kernel_lfm_delayed");
     
-    kernel_lfm_basic_ = clCreateKernel(program_, "kernel_lfm_basic", &err);
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create kernel_lfm_basic (err: " + 
-                                std::to_string(err) + ")");
-    }
-
-    kernel_lfm_delayed_ = clCreateKernel(program_, "kernel_lfm_delayed", &err);
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create kernel_lfm_delayed (err: " + 
-                                std::to_string(err) + ")");
-    }
-    
-    std::cout << "✅ OpenCL kernels compiled and created successfully!" << std::endl;
+    std::cout << "✅ OpenCL kernels ready (from cache or newly created)!" << std::endl;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -366,26 +299,32 @@ __kernel void kernel_lfm_delayed(
 // ═════════════════════════════════════════════════════════════════════════════
 
 cl_mem GeneratorGPU::signal_base() {
+    // ✅ ИСПРАВЛЕНО: Используем OpenCLManager для создания буфера
+    auto& manager = gpu::OpenCLManager::GetInstance();
+    
     cl_int err = CL_SUCCESS;
-
-    // Создать буфер для вывода (использовать cl_float2, не std::complex)
-    size_t buffer_size = total_size_ * sizeof(cl_float2);
+    
+    // Создать буфер через OpenCLManager (в байтах, не элементах)
+    size_t buffer_size_bytes = total_size_ * sizeof(cl_float2);
+    size_t num_elements = total_size_;  // количество cl_float2 элементов
     
     std::cout << "📦 Allocating GPU buffer for signal_base: " 
-              << (buffer_size / (1024.0 * 1024.0)) << " MB" << std::endl;
+              << (buffer_size_bytes / (1024.0 * 1024.0)) << " MB" << std::endl;
 
-    cl_mem output = clCreateBuffer(
-        context_,
-        CL_MEM_WRITE_ONLY,
-        buffer_size,
-        nullptr,
-        &err
+    // Создать буфер через OpenCLManager
+    auto buffer = manager.CreateBuffer(
+        num_elements,
+        gpu::MemoryType::GPU_WRITE_ONLY
     );
 
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to allocate GPU buffer for signal_base (err: " + 
-                                std::to_string(err) + ")");
-    }
+    // Получить cl_mem из GPUMemoryBuffer
+    cl_mem output = buffer->Get();
+    
+    // Зарегистрировать буфер в реестре с уникальным именем (чтобы он не удалился)
+    static size_t buffer_counter = 0;
+    std::string buffer_name = "generator_signal_base_" + std::to_string(buffer_counter++);
+    manager.RegisterBuffer(buffer_name, 
+        std::shared_ptr<gpu::GPUMemoryBuffer>(buffer.release()));
 
     // Установить аргументы kernel
     clSetKernelArg(kernel_lfm_basic_, 0, sizeof(cl_mem), &output);
@@ -418,7 +357,7 @@ cl_mem GeneratorGPU::signal_base() {
     );
 
     if (err != CL_SUCCESS) {
-        clReleaseMemObject(output);
+        // Буфер будет автоматически освобожден через GPUMemoryBuffer
         throw std::runtime_error("Failed to enqueue kernel_lfm_basic (err: " + 
                                 std::to_string(err) + ")");
     }
@@ -427,7 +366,7 @@ cl_mem GeneratorGPU::signal_base() {
     clFinish(queue_);
 
     std::cout << "✅ signal_base() completed. GPU buffer: " 
-              << (buffer_size / (1024 * 1024)) << " MB" << std::endl;
+              << (buffer_size_bytes / (1024 * 1024)) << " MB" << std::endl;
 
     return output;
 }
@@ -453,44 +392,51 @@ cl_mem GeneratorGPU::signal_valedation(
 
     cl_int err = CL_SUCCESS;
 
-    // Создать буфер для вывода
-    size_t buffer_size = total_size_ * sizeof(cl_float2);
+    // ✅ ИСПРАВЛЕНО: Используем OpenCLManager для создания буферов
+    auto& manager = gpu::OpenCLManager::GetInstance();
+    
+    // Создать буфер для вывода через OpenCLManager
+    size_t buffer_size_bytes = total_size_ * sizeof(cl_float2);
+    size_t num_elements = total_size_;
     
     std::cout << "📦 Allocating GPU buffer for signal_valedation: " 
-              << (buffer_size / (1024.0 * 1024.0)) << " MB" << std::endl;
+              << (buffer_size_bytes / (1024.0 * 1024.0)) << " MB" << std::endl;
 
-    cl_mem output = clCreateBuffer(
-        context_,
-        CL_MEM_WRITE_ONLY,
-        buffer_size,
-        nullptr,
-        &err
+    auto output_buffer = manager.CreateBuffer(
+        num_elements,
+        gpu::MemoryType::GPU_WRITE_ONLY
     );
+    cl_mem output = output_buffer->Get();
+    
+    // Зарегистрировать буфер вывода в реестре
+    static size_t buffer_counter = 0;
+    std::string output_buffer_name = "generator_signal_valedation_" + std::to_string(buffer_counter++);
+    manager.RegisterBuffer(output_buffer_name, 
+        std::shared_ptr<gpu::GPUMemoryBuffer>(output_buffer.release()));
 
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to allocate GPU buffer for signal_valedation (err: " + 
-                                std::to_string(err) + ")");
-    }
-
-    // Создать буфер для параметров задержки на GPU
+    // ✅ ИСПРАВЛЕНО: Используем OpenCLManager::CreateBufferWithData() для единого подхода
+    // Создать буфер для параметров задержки на GPU с копированием данных
     size_t delay_buffer_size = num_delay_params * sizeof(DelayParameter);
     
     std::cout << "📦 Allocating GPU buffer for delay parameters: " 
               << (delay_buffer_size / 1024.0) << " KB" << std::endl;
 
-    cl_mem delay_buffer = clCreateBuffer(
-        context_,
-        CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-        delay_buffer_size,
-        const_cast<DelayParameter*>(m_delay),
-        &err
+    // Используем CreateBufferWithData для создания буфера с данными
+    // Примечание: num_elements указываем как количество DelayParameter элементов
+    // data_size_bytes - реальный размер в байтах
+    auto delay_buffer_wrapper = manager.CreateBufferWithData(
+        num_delay_params,  // количество элементов (для статистики)
+        m_delay,           // данные для копирования
+        delay_buffer_size, // размер в байтах
+        gpu::MemoryType::GPU_READ_ONLY
     );
-
-    if (err != CL_SUCCESS) {
-        clReleaseMemObject(output);
-        throw std::runtime_error("Failed to allocate GPU buffer for delay parameters (err: " + 
-                                std::to_string(err) + ")");
-    }
+    
+    cl_mem delay_buffer = delay_buffer_wrapper->Get();
+    
+    // Зарегистрировать буфер в реестре для единообразия
+    std::string delay_buffer_name = "generator_delay_params_" + std::to_string(buffer_counter++);
+    manager.RegisterBuffer(delay_buffer_name, 
+        std::shared_ptr<gpu::GPUMemoryBuffer>(delay_buffer_wrapper.release()));
 
     // Установить аргументы kernel
     clSetKernelArg(kernel_lfm_delayed_, 0, sizeof(cl_mem), &output);
@@ -529,8 +475,7 @@ cl_mem GeneratorGPU::signal_valedation(
     );
 
     if (err != CL_SUCCESS) {
-        clReleaseMemObject(output);
-        clReleaseMemObject(delay_buffer);
+        // Буферы будут автоматически освобождены через GPUMemoryBuffer
         throw std::runtime_error("Failed to enqueue kernel_lfm_delayed (err: " + 
                                 std::to_string(err) + ")");
     }
@@ -538,11 +483,10 @@ cl_mem GeneratorGPU::signal_valedation(
     // Дождаться завершения
     clFinish(queue_);
 
-    // Освободить буфер параметров (результат уже на GPU)
-    clReleaseMemObject(delay_buffer);
+    // Буферы зарегистрированы в реестре, будут освобождены автоматически
 
     std::cout << "✅ signal_valedation() completed. GPU buffer: " 
-              << (buffer_size / (1024 * 1024)) << " MB" << std::endl;
+              << (buffer_size_bytes / (1024 * 1024)) << " MB" << std::endl;
 
     return output;
 }

@@ -45,6 +45,16 @@ public:
         MemoryType type = MemoryType::GPU_WRITE_ONLY
     );
 
+    // 3. OWNING конструктор с данными - создаёт буфер и копирует данные (CL_MEM_COPY_HOST_PTR)
+    GPUMemoryBuffer(
+        cl_context context,
+        cl_command_queue queue,
+        const void* host_data,
+        size_t data_size_bytes,
+        size_t num_elements,
+        MemoryType type = MemoryType::GPU_READ_ONLY
+    );
+
     // Деструктор
     ~GPUMemoryBuffer();
 
@@ -84,6 +94,9 @@ public:
 
     // === Тип памяти ===
     MemoryType GetMemoryType() const { return type_; }
+
+    // === Получить cl_mem для использования в OpenCL API ===
+    cl_mem Get() const { return gpu_buffer_; }
 
     // === Статистика ===
     void PrintStats() const;
