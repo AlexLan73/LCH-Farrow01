@@ -43,7 +43,7 @@ private:
     cl_kernel kernel_lfm_delayed_;       // ЛЧМ с задержками
     
     // Параметры сигнала (из конструктора)
-    const LFMParameters params_;
+    LFMParameters params_;
     
     // Размеры данных
     size_t num_samples_;
@@ -196,7 +196,30 @@ public:
     /**
      * @brief Получить параметры ЛЧМ сигнала
      */
+  
     const LFMParameters& GetParameters() const noexcept { return params_; }
+
+    /**
+     * @brief Установить углы 
+     *  angle_start_deg - начальный 
+     *  angle_stop_deg - конечный
+     *  - если значения = 0.0f то углы считаются по формуле стар = - кол-во лучей/2,  стоп = кол-во лучей/2
+     */
+    void SetParametersAngle(float angle_start = 0.0f, float angle_stop = 0.0f)  { params_.SetAngle(angle_start, angle_stop);  }
+
+    /**
+     * @brief Значение начального угла
+     */
+    float GetAngleStart()  { return params_.angle_start_deg;  }
+
+    /**
+     * @brief Значение конечного угла
+     */
+    float GetAngleStop()  { return params_.angle_stop_deg;  }
+
+    /**
+     * доделать step Angl
+     */
 };
 
 } // namespace radar

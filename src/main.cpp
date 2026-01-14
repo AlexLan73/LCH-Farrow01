@@ -7,6 +7,7 @@
 #include "GPU/opencl_manager.h"
 #include "interface/lfm_parameters.h"
 #include "generator/generator_gpu.h"
+#include "Test/t_generator.hpp"
 
 //opencl_manager.cpp 
 // lfm_parameters.h уже включен в generator_gpu.h
@@ -96,11 +97,13 @@ cl_mem gen_signal_delay(std::shared_ptr<radar::GeneratorGPU>& gen_gpu){
   std::cout << "📊 Подготовка параметров задержки для " << gen_gpu->GetNumBeams() << " лучей...\n"; //  params.num_beams
         
   std::vector<DelayParameter> m_delay(gen_gpu->GetNumBeams()); // params.num_beams
+  gen_gpu->SetParametersAngle();
+  float angl_start_ = gen_gpu->GetAngleStart(); 
   for (size_t beam = 0; beam < gen_gpu->GetNumBeams(); ++beam) {    //  params.num_beams
     // Задержка = шаг 0.5° * номер луча
     // Например: луч 0 → 0°, луч 1 → 0.5°, луч 2 → 1.0°, ...
     m_delay[beam].beam_index = beam;
-    m_delay[beam].delay_degrees = (beam * 0.5f-64.0f);  // 0, 0.5, 1.0, 1.5, ...
+    m_delay[beam].delay_degrees = (beam * 0.5f-angl_start_);  // 0, 0.5, 1.0, 1.5, ...
   }
         
   std::cout << "  • m_delay[0] = {beam_id: " << m_delay[0].beam_index 
@@ -174,7 +177,7 @@ int main() {
         std::cerr << "❌ ОШИБКА: " << e.what() << std::endl;
         return 1;
     }
-  
+    auto t_generator = std::make_shared<test::generator>();
     auto gen_gpu_ = inicial_genegstor(params_);
     cl_mem signal_base_ = gen_base_signal(gen_gpu_);
     cl_mem signal_delay_ =  gen_signal_delay(gen_gpu_);    

@@ -12,8 +12,8 @@ struct LFMParameters {
 
   // 🆕 НОВЫЕ ПОЛЯ для задержки с шагом угла:
   float angle_step_deg = 0.5f;         // Шаг по углу (градусы) - СТАНДАРТ 0.5°
-  float angle_start_deg = -60.0f;      // Начальный угол (градусы)
-  float angle_stop_deg = 60.0f;        // Конечный угол (градусы)
+  float angle_start_deg = 0.0f;      // Начальный угол (градусы)  - 64.0f
+  float angle_stop_deg = 0.0f;        // Конечный угол (градусы)   65.0f
   mutable size_t count_points = 1024*8;  // Количество точек (отсчётов) на луч
 
     // ДЛЯ ГЕТЕРОДИНА:
@@ -59,6 +59,17 @@ struct LFMParameters {
         return SPEED_OF_LIGHT / f_center;
     }
 
+    void SetAngle(float angle_start = 0.0f, float angle_stop = 0.0f){
+      if(((angle_start == 0.0f & angle_stop == 0.0f))
+        | (angle_start_deg == 0.0f & angle_stop_deg == 0.0f)){
+          float x =  static_cast<float>(num_beams/2.0f); 
+          angle_start_deg = -x;      // Начальный угол (градусы)  - 64.0f
+          angle_stop_deg = x;
+          return;
+      } 
+      angle_start_deg = angle_start; 
+      angle_stop_deg = angle_stop;
+    }
     private:
     float SPEED_OF_LIGHT = 3.0e8f;    
 };
