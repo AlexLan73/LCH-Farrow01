@@ -1,0 +1,172 @@
+#pragma once
+
+#include "GPU/opencl_manager.h"
+#include <memory>
+#include <vector>
+#include <complex>
+#include <stdexcept>
+#include <iostream>
+#include <CL/cl.h>
+
+namespace gpu {
+
+// ════════════════════════════════════════════════════════════════════════════
+// Enum для типов памяти
+// ════════════════════════════════════════════════════════════════════════════
+
+enum class MemoryType {
+    GPU_READ_ONLY,
+    GPU_WRITE_ONLY,
+    GPU_READ_WRITE
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// Класс GPUMemoryBuffer - обёртка над GPU памятью
+// ════════════════════════════════════════════════════════════════════════════
+
+class GPUMemoryBuffer {
+public:
+    // === Конструкторы ===
+
+    // 1. OWNING конструктор - объект СОЗДАЁТ новый буфер
+    GPUMemoryBuffer(
+        cl_context context,
+        cl_command_queue queue,
+        size_t num_elements,
+        MemoryType type = MemoryType::GPU_WRITE_ONLY
+    );
+
+    // 2. NON-OWNING конструктор - объект использует ГОТОВЫЙ буфер
+    GPUMemoryBuffer(
+        cl_context context,
+        cl_command_queue queue,
+        cl_mem external_gpu_buffer,
+        size_t num_elements,
+        MemoryType type = MemoryType::GPU_WRITE_ONLY
+    );
+
+    // Деструктор
+    ~GPUMemoryBuffer();
+
+    // === Запрет копирования (только move) ===
+    GPUMemoryBuffer(const GPUMemoryBuffer&) = delete;
+    GPUMemoryBuffer& operator=(const GPUMemoryBuffer&) = delete;
+
+    GPUMemoryBuffer(GPUMemoryBuffer&& other) noexcept;
+    GPUMemoryBuffer& operator=(GPUMemoryBuffer&& other) noexcept;
+
+    // === Операции чтения/записи ===
+
+    // Прочитать ВСЕ данные с GPU
+    std::vector<std::complex<float>> ReadFromGPU();
+
+    // Прочитать ЧАСТЬ данных с GPU (быстрее)
+    std::vector<std::complex<float>> ReadPartial(size_t num_elements);
+
+    // Записать данные на GPU
+    void WriteToGPU(const std::vector<std::complex<float>>& data);
+
+    // === Информация о буфере ===
+
+    // Количество элементов
+    size_t GetNumElements() const { return num_elements_; }
+
+    // Размер в байтах
+    size_t GetSizeBytes() const {
+        return num_elements_ * sizeof(std::complex<float>);
+    }
+
+    // Является ли буфер внешним (non-owning)
+    bool IsExternalBuffer() const { return is_external_buffer_; }
+
+    // Грязный ли буфер (нужно читать)
+    bool IsGPUDirty() const { return gpu_dirty_; }
+
+    // === Тип памяти ===
+    MemoryType GetMemoryType() const { return type_; }
+
+    // === Статистика ===
+    void PrintStats() const;
+
+private:
+    // === Члены класса ===
+    cl_context context_;
+    cl_command_queue queue_;
+    cl_mem gpu_buffer_;
+    std::vector<std::complex<float>> pinned_host_buffer_;
+
+    size_t num_elements_;
+    MemoryType type_;
+
+    // Флаг владения буфером (важно!)
+    bool is_external_buffer_;
+
+    // Флаг грязности GPU буфера
+    bool gpu_dirty_;
+
+    // === Приватные методы ===
+
+    // Создать GPU буфер
+    void AllocateGPUBuffer();
+
+    // Создать pinned host буфер для быстрого DMA
+    void AllocatePinnedHostBuffer();
+
+    // Освободить pinned host буфер
+    void ReleasePinnedHostBuffer();
+
+    // Проверить ошибку OpenCL
+    static void CheckCLError(cl_int error, const std::string& operation);
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// Синглтон GPUMemoryManager - управляет всеми буферами
+// ════════════════════════════════════════════════════════════════════════════
+
+class GPUMemoryManager {
+public:
+    // === Инициализация (один раз) ===
+    static void Initialize();
+
+    // === Создание буферов ===
+
+    // Создать НОВЫЙ буфер (объект ВЛАДЕЕТ памятью)
+    static std::unique_ptr<GPUMemoryBuffer> CreateBuffer(
+        size_t num_elements,
+        MemoryType type = MemoryType::GPU_WRITE_ONLY
+    );
+
+    // Обернуть ГОТОВЫЙ буфер (объект НЕ владеет памятью)
+    static std::unique_ptr<GPUMemoryBuffer> WrapExternalBuffer(
+        cl_mem external_gpu_buffer,
+        size_t num_elements,
+        MemoryType type = MemoryType::GPU_WRITE_ONLY
+    );
+
+    // === Статистика ===
+    static void PrintStatistics();
+
+    // === Доступ к синглтону ===
+    static GPUMemoryManager& GetInstance();
+    ~GPUMemoryManager() = default;
+
+private:
+    // === Синглтон (приватный конструктор) ===
+    GPUMemoryManager();
+
+    // Запрет копирования
+    GPUMemoryManager(const GPUMemoryManager&) = delete;
+    GPUMemoryManager& operator=(const GPUMemoryManager&) = delete;
+
+    // === Члены класса ===
+    static std::unique_ptr<GPUMemoryManager> instance_;
+    static bool initialized_;
+
+    cl_context context_;
+    cl_command_queue queue_;
+
+    size_t total_allocated_bytes_;
+    size_t num_buffers_;
+};
+
+} // namespace gpu

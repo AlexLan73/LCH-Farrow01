@@ -312,7 +312,9 @@ if(OPENCL_ENABLED)
 #        src/gpuprofiling.cpp
 #        src/generator/generatorgpu.cpp
         src/GPU/opencl_manager.cpp  
+        src/GPU/gpu_memory_manager.cpp
         src/generator/generator_gpu.cpp
+        
     )
     list(APPEND HEADERS
 #        include/signalbuffer.h
@@ -328,10 +330,13 @@ if(OPENCL_ENABLED)
 #        include/resultcomparator.h
 #        include/gpuprofiling.h
 #        include/generator/generatorgpu.h
-        include/GPU/opencl_manager.h         
+        include/GPU/opencl_manager.h     
+        include/GPU/gpu_memory_manager.hpp    
         include/interface/lfm_parameters.h
         include/interface/DelayParameter.h
         include/generator/generator_gpu.h
+        include/test/t_generator.hpp
+        include/test/t_gpu_mem_buffer.hpp        
     )
     message(STATUS "✅ OpenCL sources added")
 endif()

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <CL/cl.h>
-#include <cstdint>
+//#include <cstdint>
 #include <vector>
 #include <complex>
-#include <stdexcept>
+//#include <stdexcept>
 #include <string>
 #include <interface/lfm_parameters.h>
 #include <interface/DelayParameter.h>
@@ -218,7 +218,7 @@ public:
     float GetAngleStop()  { return params_.angle_stop_deg;  }
 
     /**
-     * доделать step Angl
+     * доделать step Ang
      */
 };
 

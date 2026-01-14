@@ -11,10 +11,17 @@
 #include <stdexcept>
 #include <iostream>
 #include <CL/cl.h>
+#include <cstring>
 
-namespace radar {
-namespace gpu {
+#include <CL/cl.h>
+#include <vector>
+#include <complex>
+#include <memory>
+#include <iostream>
+#include <cstring>
+#include <stdexcept>
 
+namespace gpu{
 // ═════════════════════════════════════════════════════════════════════════════
 // Enum для типов памяти
 // ═════════════════════════════════════════════════════════════════════════════
@@ -39,6 +46,7 @@ public:
     GPUMemoryBuffer(
         cl_context context,
         cl_command_queue queue,
+        cl_mem signal_gpu,        
         size_t num_elements,
         MemoryType type = MemoryType::GPU_WRITE_ONLY
     ) : context_(context),
@@ -46,7 +54,7 @@ public:
         num_elements_(num_elements),
         element_size_(sizeof(std::complex<float>)),
         memory_type_(type),
-        gpu_buffer_(nullptr),
+        gpu_buffer_(signal_gpu),
         cpu_buffer_(nullptr),
         cpu_pinned_buffer_(nullptr),
         is_gpu_dirty_(false)
@@ -449,5 +457,5 @@ private:
     bool is_gpu_dirty_;
 };
 
-} // namespace gpu
-} // namespace radar
+}// namespace gpu
+

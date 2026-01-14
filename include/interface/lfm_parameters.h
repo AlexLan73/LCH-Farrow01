@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cmath>
 
 struct LFMParameters {
   float f_start = 100.0f;              // Начальная частота (Гц)
@@ -62,7 +63,7 @@ struct LFMParameters {
     void SetAngle(float angle_start = 0.0f, float angle_stop = 0.0f){
       if(((angle_start == 0.0f & angle_stop == 0.0f))
         | (angle_start_deg == 0.0f & angle_stop_deg == 0.0f)){
-          float x =  static_cast<float>(num_beams/2.0f); 
+          float x =  std::round((static_cast<float>(num_beams) / 4.0f) * 2.0f) / 2.0f;
           angle_start_deg = -x;      // Начальный угол (градусы)  - 64.0f
           angle_stop_deg = x;
           return;
