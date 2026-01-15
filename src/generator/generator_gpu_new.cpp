@@ -77,8 +77,8 @@ GeneratorGPU::~GeneratorGPU() {
     kernel_lfm_basic_ = nullptr;
     kernel_lfm_delayed_ = nullptr;
     kernel_program_ = nullptr;
-    buffer_signal_base_ = nullptr;
-    buffer_signal_delayed_ = nullptr;
+    buffer_signal_base_.reset();  // Освободит unique_ptr (буфер будет освобожден автоматически)
+    buffer_signal_delayed_.reset();
     engine_ = nullptr;
 
     std::cout << "[GeneratorGPU] ✅ Destroyed" << std::endl;
@@ -94,14 +94,14 @@ GeneratorGPU::GeneratorGPU(GeneratorGPU&& other) noexcept
       kernel_program_(std::move(other.kernel_program_)),
       kernel_lfm_basic_(other.kernel_lfm_basic_),
       kernel_lfm_delayed_(other.kernel_lfm_delayed_),
-      buffer_signal_base_(other.buffer_signal_base_),
-      buffer_signal_delayed_(other.buffer_signal_delayed_) {
+      buffer_signal_base_(std::move(other.buffer_signal_base_)),
+      buffer_signal_delayed_(std::move(other.buffer_signal_delayed_)) {
     
     other.engine_ = nullptr;
     other.kernel_lfm_basic_ = nullptr;
     other.kernel_lfm_delayed_ = nullptr;
-    other.buffer_signal_base_ = nullptr;
-    other.buffer_signal_delayed_ = nullptr;
+    other.buffer_signal_base_.reset();
+    other.buffer_signal_delayed_.reset();
 }
 
 GeneratorGPU& GeneratorGPU::operator=(GeneratorGPU&& other) noexcept {
@@ -110,8 +110,8 @@ GeneratorGPU& GeneratorGPU::operator=(GeneratorGPU&& other) noexcept {
         kernel_lfm_basic_ = nullptr;
         kernel_lfm_delayed_ = nullptr;
         kernel_program_ = nullptr;
-        buffer_signal_base_ = nullptr;
-        buffer_signal_delayed_ = nullptr;
+        buffer_signal_base_.reset();
+        buffer_signal_delayed_.reset();
 
         // Переместить от other
         engine_ = other.engine_;
@@ -122,15 +122,15 @@ GeneratorGPU& GeneratorGPU::operator=(GeneratorGPU&& other) noexcept {
         kernel_program_ = std::move(other.kernel_program_);
         kernel_lfm_basic_ = other.kernel_lfm_basic_;
         kernel_lfm_delayed_ = other.kernel_lfm_delayed_;
-        buffer_signal_base_ = other.buffer_signal_base_;
-        buffer_signal_delayed_ = other.buffer_signal_delayed_;
+        buffer_signal_base_ = std::move(other.buffer_signal_base_);
+        buffer_signal_delayed_ = std::move(other.buffer_signal_delayed_);
 
         // Обнулить в other
         other.engine_ = nullptr;
         other.kernel_lfm_basic_ = nullptr;
         other.kernel_lfm_delayed_ = nullptr;
-        other.buffer_signal_base_ = nullptr;
-        other.buffer_signal_delayed_ = nullptr;
+        other.buffer_signal_base_.reset();
+        other.buffer_signal_delayed_.reset();
     }
     return *this;
 }
@@ -419,14 +419,13 @@ cl_mem GeneratorGPU::signal_base() {
         // ✅ Выполнить kernel
         ExecuteKernel(kernel_lfm_basic_, output->Get());
         
-        // ✅ Сохранить буфер в cache
-        buffer_signal_base_ = output->Get();
+        // ✅ Сохранить unique_ptr в cache (ВАЖНО: буфер не будет освобожден!)
+        buffer_signal_base_ = std::move(output);
         
         std::cout << "[GeneratorGPU] ✅ signal_base() completed" << std::endl;
         
-        // ✅ Освободить unique_ptr (выход из области видимости), но GPU память остаётся!
-        // ВАЖНО: GetSizeBytes используется для отслеживания памяти в engine
-        return output->Get();
+        // ✅ Вернуть cl_mem из сохраненного буфера
+        return buffer_signal_base_->Get();
         
     } catch (const std::exception& e) {
         throw std::runtime_error(
@@ -477,12 +476,12 @@ cl_mem GeneratorGPU::signal_valedation(
         // ✅ Выполнить kernel
         ExecuteKernel(kernel_lfm_delayed_, output->Get(), delay_gpu_buffer->Get());
         
-        // ✅ Сохранить буфер в cache
-        buffer_signal_delayed_ = output->Get();
+        // ✅ Сохранить unique_ptr в cache (ВАЖНО: буфер не будет освобожден!)
+        buffer_signal_delayed_ = std::move(output);
         
         std::cout << "[GeneratorGPU] ✅ signal_valedation() completed" << std::endl;
         
-        return output->Get();
+        return buffer_signal_delayed_->Get();
         
     } catch (const std::exception& e) {
         throw std::runtime_error(
@@ -509,5 +508,183 @@ void GeneratorGPU::SetParametersAngle(float angle_start, float angle_stop) {
     std::cout << "[GeneratorGPU] Angle set: [" << params_.angle_start_deg 
               << "°, " << params_.angle_stop_deg << "°]" << std::endl;
 }
+
+std::vector<std::complex<float>> GeneratorGPU::GetSignalAsVector(int beam_index) {
+    // ✅ Проверка индекса
+    if (beam_index < 0 || beam_index >= (int)num_beams_) {
+        std::cerr << "❌ GetSignalAsVector: Invalid beam_index " << beam_index 
+                  << " (valid range: 0-" << (num_beams_ - 1) << ")" << std::endl;
+        return {};
+    }
+    
+    // ✅ Проверка, что буфер создан
+    if (!buffer_signal_base_ || !buffer_signal_base_->Get()) {
+        std::cerr << "❌ GetSignalAsVector: buffer_signal_base_ is nullptr. "
+                  << "Call signal_base() first!" << std::endl;
+        return {};
+    }
+    
+    // ✅ Синхронизация GPU перед чтением
+    ClearGPU();
+    
+    std::vector<std::complex<float>> result(num_samples_);
+    
+    try {
+        // ✅ Получить валидную очередь
+        cl_command_queue queue = gpu::CommandQueuePool::GetNextQueue();
+        if (!queue) {
+            std::cerr << "❌ GetSignalAsVector: Invalid command queue" << std::endl;
+            return {};
+        }
+        
+        // ✅ Вычислить смещение и размер
+        size_t offset_bytes = beam_index * num_samples_ * sizeof(std::complex<float>);
+        size_t size_bytes = num_samples_ * sizeof(std::complex<float>);
+        
+        // ✅ Проверка границ
+        size_t total_buffer_size = total_size_ * sizeof(std::complex<float>);
+        if (offset_bytes + size_bytes > total_buffer_size) {
+            std::cerr << "❌ GetSignalAsVector: Offset+Size exceeds buffer size. "
+                      << "offset=" << offset_bytes << " size=" << size_bytes 
+                      << " total=" << total_buffer_size << std::endl;
+            return {};
+        }
+        
+        // ✅ Вызов clEnqueueReadBuffer с правильными параметрами
+        cl_int err = clEnqueueReadBuffer(
+            queue,                           // command_queue
+            buffer_signal_base_->Get(),      // buffer (получаем cl_mem из unique_ptr)
+            CL_TRUE,                         // blocking_read (CL_TRUE = ждём завершения)
+            offset_bytes,                    // offset в байтах
+            size_bytes,                      // размер в байтах
+            result.data(),                   // указатель на host память
+            0,                               // num_events_in_wait_list (0 = нет зависимостей)
+            nullptr,                         // event_wait_list (nullptr = нет событий)
+            nullptr                          // event (nullptr = не возвращаем событие)
+        );
+        
+        if (err != CL_SUCCESS) {
+            std::cerr << "❌ clEnqueueReadBuffer error: " << err << std::endl;
+            std::cerr << "   beam_index=" << beam_index 
+                      << " offset_bytes=" << offset_bytes 
+                      << " size_bytes=" << size_bytes << std::endl;
+            return {};
+        }
+        
+        return result;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception in GetSignalAsVector: " << e.what() << std::endl;
+        return {};
+    } catch (...) {
+        std::cerr << "❌ Unknown exception in GetSignalAsVector" << std::endl;
+        return {};
+    }
+}
+
+  std::vector<std::complex<float>>  GeneratorGPU::GetSignalAsVectorPartial(int beam_index, size_t num_samples){
+    // Такой же как GetSignalAsVector(), но используем ReadPartial():
+    
+    if (beam_index < 0 || beam_index >= (int)num_beams_) {
+        return {};
+    }
+    
+    if (num_samples > num_samples_) {
+        num_samples = num_samples_;
+    }
+    
+    ClearGPU();
+    
+    auto& core = gpu::OpenCLCore::GetInstance();
+    
+    if (!buffer_signal_base_ || !buffer_signal_base_->Get()) {
+        std::cerr << "❌ GetSignalAsVectorPartial: buffer_signal_base_ is nullptr" << std::endl;
+        return {};
+    }
+    
+    gpu::GPUMemoryBuffer buffer(
+        core.GetContext(),
+        gpu::CommandQueuePool::GetNextQueue(),
+        buffer_signal_base_->Get(),  // Получаем cl_mem из unique_ptr
+        total_size_,
+        gpu::MemoryType::GPU_READ_ONLY
+    );
+    
+    // РАЗЛИЧИЕ: используем ReadPartial() вместо ReadFromGPU()
+    auto all_data = buffer.ReadPartial(total_size_);  // Сначала читаем всё
+    
+    size_t beam_start = beam_index * num_samples_;
+    size_t beam_end = beam_start + num_samples;  // ← num_samples, не num_samples_!
+    
+    std::vector<std::complex<float>> result(
+        all_data.begin() + beam_start,
+        all_data.begin() + beam_end
+    );
+    
+    return result;
+
+  }  
+
+  
+  std::vector<std::complex<float>>  GeneratorGPU::GetSignalAsVectorAll(){
+    // ════════════════════════════════════════════════════════════════════════
+    // ШАГ 1: Синхронизировать GPU перед чтением
+    // ════════════════════════════════════════════════════════════════════════
+    
+    ClearGPU();  // Ждём завершения всех операций
+    
+    // ════════════════════════════════════════════════════════════════════════
+    // ШАГ 2: Получить engine и OpenCLCore
+    // ════════════════════════════════════════════════════════════════════════
+    
+    auto& core = gpu::OpenCLCore::GetInstance();
+    
+    // ════════════════════════════════════════════════════════════════════════
+    // ШАГ 3: Обернуть raw cl_mem в GPUMemoryBuffer (NON-OWNING!)
+    // ════════════════════════════════════════════════════════════════════════
+    // 
+    // ВАЖНО: Используем NON-OWNING конструктор (второй параметр - external buffer)!
+    // Это значит GPUMemoryBuffer НЕ удалит cl_mem при своём разрушении.
+    // Удаление сделает GeneratorGPU в своём деструкторе.
+    // 
+    // Конструктор:
+    // GPUMemoryBuffer(context, queue, external_buffer, num_elements, type)
+    
+    if (!buffer_signal_base_ || !buffer_signal_base_->Get()) {
+        std::cerr << "❌ GetSignalAsVectorAll: buffer_signal_base_ is nullptr" << std::endl;
+        return {};
+    }
+    
+    try {
+        gpu::GPUMemoryBuffer buffer(
+            core.GetContext(),                          // контекст OpenCL
+            gpu::CommandQueuePool::GetNextQueue(),      // очередь для операции
+            buffer_signal_base_->Get(),                 // cl_mem из unique_ptr (НЕ удалится!)
+            total_size_,                                // всего элементов (num_beams * num_samples)
+            gpu::MemoryType::GPU_READ_ONLY              // тип: только чтение
+        );
+        
+        // ════════════════════════════════════════════════════════════════════
+        // ШАГ 5: Прочитать все данные
+        // ════════════════════════════════════════════════════════════════════
+        
+        std::cout << "[READ] Reading " << total_size_ << " samples from GPU..." << std::endl;
+        auto all_data = buffer.ReadFromGPU();
+        
+        if (all_data.empty()) {
+            std::cerr << "❌ Failed to read data from GPU!" << std::endl;
+            return {};
+        }
+        
+        std::cout << "[READ] ✅ Successfully read " << all_data.size() << " samples" << std::endl;
+        
+        return all_data;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception in GetSignalAsVector(): " << e.what() << std::endl;
+        return {};
+    }
+
+  };
 
 } // namespace radar

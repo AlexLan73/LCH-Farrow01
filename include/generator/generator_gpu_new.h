@@ -191,6 +191,67 @@ public:
     /// Установить углы
     void SetParametersAngle(float angle_start = 0.0f, float angle_stop = 0.0f);
 
+/**
+ * @brief Получить сигнал конкретного луча как вектор комплексных чисел
+ * @param beam_index Индекс луча (0 до num_beams-1)
+ * @return std::vector<std::complex<float>> вектор сигнала
+ * 
+ * ИСПОЛЬЗОВАНИЕ:
+ * ```cpp
+ * GeneratorGPU gen(params);
+ * cl_mem gpu_signal = gen.signal_base();
+ * gen.ClearGPU();  // Синхронизировать!
+ * 
+ * auto beam0_data = gen.GetSignalAsVector(0);  // Луч 0
+ * auto beam1_data = gen.GetSignalAsVector(1);  // Луч 1
+ * ```
+ * 
+ * ПРЕИМУЩЕСТВА:
+ * - Автоматическая синхронизация GPU
+ * - Правильное извлечение нужного луча
+ * - Проверка индекса
+ * - Подробное логирование
+ */
+
+ /**
+ * @brief Получить сигнал конкретного луча как вектор комплексных чисел
+ * @param beam_index Индекс луча (0 до num_beams-1)
+ * @return std::vector<std::complex<float>> вектор сигнала
+ * 
+ * ИСПОЛЬЗОВАНИЕ:
+ * ```cpp
+ * GeneratorGPU gen(params);
+ * cl_mem gpu_signal = gen.signal_base();
+ * gen.ClearGPU();  // Синхронизировать!
+ * 
+ * auto beam0_data = gen.GetSignalAsVector(0);  // Луч 0
+ * auto beam1_data = gen.GetSignalAsVector(1);  // Луч 1
+ * ```
+ * 
+ * ПРЕИМУЩЕСТВА:
+ * - Автоматическая синхронизация GPU
+ * - Правильное извлечение нужного луча
+ * - Проверка индекса
+ * - Подробное логирование
+ */
+  std::vector<std::complex<float>> GetSignalAsVector(int beam_index = 0);
+
+  /**
+ * @brief Получить несколько сэмплов конкретного луча
+ * @param beam_index Индекс луча
+ * @param num_samples Количество сэмплов для чтения
+ * @return Вектор комплексных чисел
+ * 
+ * ЕСЛИ У ВАС БОЛЬШОЙ БУФЕР И НУЖНЫ ТОЛЬКО НЕСКОЛЬКО СЭМПЛОВ:
+ * 
+ * ```cpp
+ * // Прочитать только первые 32 сэмпла луча 0
+ * auto first_samples = gen.GetSignalAsVectorPartial(0, 32);
+ * ```
+ */
+  std::vector<std::complex<float>> GetSignalAsVectorPartial(int beam_index, size_t num_samples);  
+  std::vector<std::complex<float>> GetSignalAsVectorAll();
+
 private:
     // ════════════════════════════════════════════════════════════════
     // PRIVATE MEMBERS - СОСТОЯНИЕ ГЕНЕРАТОРА
@@ -202,6 +263,7 @@ private:
     /// Параметры ЛЧМ сигнала
     LFMParameters params_;
 
+
     /// Размеры данных (кэш для быстрого доступа)
     size_t num_samples_;   // Количество отсчётов на луч
     size_t num_beams_;     // Количество лучей
@@ -212,9 +274,10 @@ private:
     cl_kernel kernel_lfm_basic_;      // kernel_lfm_basic
     cl_kernel kernel_lfm_delayed_;    // kernel_lfm_delayed
 
-    /// Буферы результатов (кэш)
-    cl_mem buffer_signal_base_;     // Результат signal_base()
-    cl_mem buffer_signal_delayed_;  // Результат signal_valedation()
+    /// Буферы результатов (кэш) - сохраняем unique_ptr чтобы буферы не освобождались
+    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_base_;     // Результат signal_base()
+    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_delayed_;  // Результат signal_valedation()
+
 
     // ════════════════════════════════════════════════════════════════
     // PRIVATE METHODS - ИНИЦИАЛИЗАЦИЯ И УТИЛИТЫ

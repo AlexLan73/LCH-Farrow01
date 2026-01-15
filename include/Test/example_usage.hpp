@@ -35,11 +35,11 @@ void example_basic_lfm() {
         std::cout << "Step 2: Creating LFM parameters..." << std::endl;
         
         LFMParameters params;
-        params.f_start = 0.400e6f;         // 100 kHz
-        params.f_stop = 0.500e6f;          // 500 kHz
+        params.f_start = 1.00e6f;         // 100 kHz
+        params.f_stop = 2.5000e6f;          // 500 kHz
         params.sample_rate = 12.0e6f;    // 12 MHz sampling rate
         params.num_beams = 256;          // 256 beams
-        params.count_points = 1024 * 8;  // 8192 samples per beam
+        params.count_points = 1024 * 16;  // 8192 samples per beam
         params.angle_step_deg = 0.5f;    // 0.5° step
         params.SetAngle();               // Auto-set angle range
         
@@ -72,7 +72,7 @@ void example_basic_lfm() {
         // ✅ ШАГ 5: Синхронизировать GPU
         std::cout << "Step 5: Syncing GPU..." << std::endl;
         
-//        gen.ClearGPU();
+        gen.ClearGPU();
         
         std::cout << "✅ GPU synced\n" << std::endl;
 
@@ -82,17 +82,21 @@ void example_basic_lfm() {
         auto& engine = gpu::OpenCLComputeEngine::GetInstance();
         
         // Прочитать все данные (БОЛЬШОЙ ОБЪЁМ!)
-        // std::vector<std::complex<float>> result = 
-        //     engine.ReadBufferFromGPU(signal_gpu, total_size);
+        //std::vector<std::complex<float>> result = 
+//             engine. ReadBufferFromGPU(signal_gpu, total_size);
+             //engine.Rea(signal_gpu, total_size);
         
         // Прочитать только первый луч (256 samples)
-        size_t num_samples = gen.GetNumSamples();
+//        size_t num_samples = gen.GetNumSamples();
+        size_t num_samples = 10;
         std::vector<std::complex<float>> first_beam(num_samples);
         
+        auto beam0 = gen.GetSignalAsVector(0);
+         
         // TODO: Реализовать ReadPartial в OpenCLComputeEngine
-        // for (int i = 0; i < num_samples; i++) {
-        //     first_beam[i] = result[i];
-        // }
+        for (int i = 0; i < num_samples; i++) {
+             first_beam[i] = beam0[i];
+         }
         
         std::cout << "✅ First beam data (would be read from GPU)" << std::endl;
         std::cout << "  Beam 0, first 5 samples: (would show values)\n" << std::endl;
