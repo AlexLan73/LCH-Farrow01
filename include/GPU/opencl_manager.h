@@ -8,11 +8,13 @@
 #include <memory>
 #include <stdexcept>
 
-// Forward declaration (полное определение в gpu_memory_manager.hpp)
+// Forward declaration для GPUMemoryBuffer (полное определение в gpu_memory_buffer.hpp)
 namespace gpu {
     class GPUMemoryBuffer;
-    enum class MemoryType;
 }
+
+// Полное определение MemoryType нужно для параметров по умолчанию
+#include "GPU/memory_type.hpp"
 
 namespace gpu {
 
@@ -159,7 +161,7 @@ public:
         size_t num_elements,
         const void* host_data,
         size_t data_size_bytes = 0,
-        MemoryType type = MemoryType::GPU_READ_ONLY
+        MemoryType type = static_cast<MemoryType>(0)  // GPU_READ_ONLY = 0
     );
 
     /**

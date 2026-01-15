@@ -1,6 +1,7 @@
 
 #include "GPU/opencl_manager.h"
-#include "GPU/gpu_memory_manager.hpp"
+#include "GPU/memory_type.hpp"
+#include "GPU/gpu_memory_buffer.hpp"
 #include <iostream>
 #include <sstream>
 #include <functional>

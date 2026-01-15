@@ -9,6 +9,7 @@
 
 #include "generator/generator_gpu.h"
 #include "GPU/opencl_manager.h"
+#include "GPU/gpu_memory_manager.hpp"  // Для полного определения MemoryType
 //#include "lfm_parameters.h"
 namespace radar {
 

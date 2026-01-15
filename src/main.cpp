@@ -1,16 +1,43 @@
 #include <iostream>
-#include <exception>
-#include <complex>
-#include <memory>
 
 #include <CL/cl.h>
-#include "GPU/opencl_manager.h"
-#include "interface/lfm_parameters.h"
-#include "Test/t_generator.hpp"
-#include "GPU/gpu_memory_manager.hpp"
-#include "Test/examples_clean.hpp"
+#include "GPU/opencl_compute_engine.hpp"
+#include "Test/example_usage.hpp"
 
-int inicial_opencl_manager(){
+
+
+int main() {
+    gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+    auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+
+    // Показать информацию о девайсе
+    std::cout << engine.GetDeviceInfo();
+
+    // ... код программы ...
+
+    // Очистка (опционально, вызывается в деструкторе)
+    gpu::OpenCLComputeEngine::Cleanup();
+
+    std::cout << "\n╔══════════════════════════════════════════════════════════════════╗" << std::endl;
+    std::cout << "║        GeneratorGPU Examples (NEW ARCHITECTURE)                  ║" << std::endl;
+    std::cout << "╚══════════════════════════════════════════════════════════════════╝\n" << std::endl;
+
+    // Запустить примеры
+    example_basic_lfm();
+    example_delayed_lfm();
+    example_multiple_generators();
+
+    std::cout << "\n╔══════════════════════════════════════════════════════════════════╗" << std::endl;
+    std::cout << "║                    ALL EXAMPLES COMPLETED                        ║" << std::endl;
+    std::cout << "╚══════════════════════════════════════════════════════════════════╝\n" << std::endl;
+
+  return 0;
+}
+
+/**
+ * 
+ * 
+ int inicial_opencl_manager(){
   try {
     gpu::OpenCLManager::Initialize(CL_DEVICE_TYPE_GPU);
     auto& opencl_ = gpu::OpenCLManager::GetInstance();
@@ -53,10 +80,11 @@ LFMParameters inicial_params() {
     << " MB\n\n";
   return params;    
 }
-
-
-int main() {
-  std::cout << "═══════════════════════════════════════════════════════════\n"
+* 
+ * 
+ * 
+ ******************* 
+   std::cout << "═══════════════════════════════════════════════════════════\n"
             << "GeneratorGPU - Параллельная генерация ЛЧМ на GPU\n"
             << "═══════════════════════════════════════════════════════════\n\n";
   // Инициализация OpenCL
@@ -82,10 +110,8 @@ int main() {
     gpu::GPUMemoryManager::Initialize();
     examples::RunAllExamples();
 
-    return 0;
-}
 
-/**
+ 
  auto mem_bufer_ = std::make_shared<test::gpu_mem_buffer>(t_generator_->GetGenratorGPU());
 
     mem_bufer_-> Example1_FullTransfer(t_generator_->mem_gen ); 

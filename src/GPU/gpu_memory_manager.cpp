@@ -1,4 +1,5 @@
 #include "GPU/gpu_memory_manager.hpp"
+#include "GPU/memory_type.hpp"  // Для полного определения MemoryType
 #include <iostream>
 #include <algorithm>
 #include <iomanip>

@@ -4,9 +4,10 @@
 
 #pragma once
 
+#include "GPU/memory_type.hpp"  // Для полного определения MemoryType
 #include "GPU/gpu_memory_manager.hpp"
 #include "GPU/opencl_manager.h"
-#include "generator/generator_gpu.h"
+#include "generator/generator_gpu_new.h"
 
 #include <memory>
 #include <iostream>
