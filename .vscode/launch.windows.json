@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug LCH-Farrow (Windows)",
+            "name": "Debug LCH-Farrow01 (Windows)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow.exe",
+            "program": "${workspaceFolder}/build/LCH-Farrow01.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
@@ -15,10 +15,10 @@
             "externalConsole": false
         },
         {
-            "name": "Debug LCH-Farrow (Windows) --copy-to-host",
+            "name": "Debug LCH-Farrow01 (Windows) --copy-to-host",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow.exe",
+            "program": "${workspaceFolder}/build/LCH-Farrow01.exe",
             "args": ["--copy-to-host"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
@@ -28,10 +28,10 @@
             "externalConsole": false
         },
         {
-            "name": "Debug LCH-Farrow (Windows - Release)",
+            "name": "Debug LCH-Farrow01 (Windows - Release)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow.exe",
+            "program": "${workspaceFolder}/build/LCH-Farrow01.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",

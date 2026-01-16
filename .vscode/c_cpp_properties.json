@@ -1,41 +1,33 @@
 {
     "configurations": [
         {
-            "name": "Linux",
+            "name": "Win32",
             "includePath": [
-                "${workspaceFolder}",
+                "${workspaceFolder}/**",
                 "${workspaceFolder}/include",
-                "${workspaceFolder}/include/GPU",
-                "${workspaceFolder}/include/interface",
-                "${workspaceFolder}/include/generator",
-                "${workspaceFolder}/clFFT/include",
-                "/usr/include",
-                "/usr/include/CL",
-                "/usr/local/include"
-//                "/home/alex/C++/LCH-Farrow01/include",
-//                "/home/alex/C++/LCH-Farrow01/include/GPU",
-//                "/home/alex/C++/LCH-Farrow01/include/interface",
+                "${workspaceFolder}/include/**",
+                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include",
+                "${workspaceFolder}/clFFT/include"
             ],
             "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
                 "OPENCL_ENABLED=1",
-                "CLFFT_FOUND=1",
-                "CUDA_ENABLED=0"
+                "_CRT_SECURE_NO_WARNINGS",
+                "_CRT_NONSTD_NO_WARNINGS"
             ],
-            "compilerPath": "/usr/bin/g++",
+            "windowsSdkVersion": "10.0.22000.0",
+            "compilerPath": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/Hostx64/x64/cl.exe",
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "linux-gcc-x64",
+            "intelliSenseMode": "windows-msvc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools",
             "compileCommands": "${workspaceFolder}/compile_commands.json",
             "browse": {
                 "path": [
                     "${workspaceFolder}",
-                    "${workspaceFolder}/include",
-                    "${workspaceFolder}/include/GPU",
-                    "${workspaceFolder}/include/interface",
-                    "${workspaceFolder}/include/generator",
-                    "${workspaceFolder}/clFFT/include",
-                    "/usr/include",
-                    "/usr/local/include"
+                    "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include"
                 ],
                 "limitSymbolsToIncludedHeaders": false
             }

@@ -14,6 +14,7 @@
 #include <sstream>
 #include <cmath>
 #include <stdexcept>
+#include <CL/cl.h>
 
 namespace radar {
 
@@ -196,7 +197,7 @@ std::string GeneratorGPU::GetKernelSource() const {
 // ═════════════════════════════════════════════════════════════════════════
 
 typedef struct {
-    uint beam_index;
+    cl_uint beam_index;
     float delay_degrees;
 } DelayParam;
 
@@ -348,13 +349,13 @@ void GeneratorGPU::ExecuteKernel(
         float speed_of_light = 3.0e8f;
         err = clSetKernelArg(kernel, 6, sizeof(float), &speed_of_light);
         
-        uint num_samples = static_cast<uint>(num_samples_);
-        uint num_beams = static_cast<uint>(num_beams_);
-        uint num_delays = num_beams;
-        
-        err = clSetKernelArg(kernel, 7, sizeof(uint), &num_samples);
-        err = clSetKernelArg(kernel, 8, sizeof(uint), &num_beams);
-        err = clSetKernelArg(kernel, 9, sizeof(uint), &num_delays);
+        cl_uint num_samples = static_cast<cl_uint>(num_samples_);
+        cl_uint num_beams = static_cast<cl_uint>(num_beams_);
+        cl_uint num_delays = num_beams;
+
+        err = clSetKernelArg(kernel, 7, sizeof(cl_uint), &num_samples);
+        err = clSetKernelArg(kernel, 8, sizeof(cl_uint), &num_beams);
+        err = clSetKernelArg(kernel, 9, sizeof(cl_uint), &num_delays);
     } else {
         // kernel_lfm_basic без параметров задержки
         
@@ -368,11 +369,11 @@ void GeneratorGPU::ExecuteKernel(
         err = clSetKernelArg(kernel, 3, sizeof(float), &params_.sample_rate);
         err = clSetKernelArg(kernel, 4, sizeof(float), &params_.duration);
         
-        uint num_samples = static_cast<uint>(num_samples_);
-        uint num_beams = static_cast<uint>(num_beams_);
-        
-        err = clSetKernelArg(kernel, 5, sizeof(uint), &num_samples);
-        err = clSetKernelArg(kernel, 6, sizeof(uint), &num_beams);
+        cl_uint num_samples = static_cast<cl_uint>(num_samples_);
+        cl_uint num_beams = static_cast<cl_uint>(num_beams_);
+
+        err = clSetKernelArg(kernel, 5, sizeof(cl_uint), &num_samples);
+        err = clSetKernelArg(kernel, 6, sizeof(cl_uint), &num_beams);
     }
 
     // ✅ Выполнить kernel
