@@ -2,6 +2,30 @@
 
 #include <cstddef>
 #include <cmath>
+#include <vector>
+#include <map>
+
+// Структура для параметров синусоиды
+struct SinusoidParameter {
+    float amplitude;    // Амплитуда
+    float period;       // Период в точках (количество точек на один период)
+    float phase_deg;    // Фаза в градусах
+    
+    SinusoidParameter(float amp = 1.0f, float period_points = 100.0f, float phase = 0.0f)
+        : amplitude(amp), period(period_points), phase_deg(phase) {}
+};
+
+// Тип для маппинга: номер луча → вектор параметров синусоиды
+typedef std::map<int, std::vector<SinusoidParameter>> RaySinusoidMap;
+
+// Структура для параметров генерации синусоид
+struct SinusoidGenParams {
+    size_t num_rays;      // Количество лучей/антенн
+    size_t count_points;  // Количество точек на антенну
+    
+    SinusoidGenParams(size_t rays = 0, size_t points = 0)
+        : num_rays(rays), count_points(points) {}
+};
 
 struct LFMParameters {
   float f_start = 100.0f;              // Начальная частота (Гц)

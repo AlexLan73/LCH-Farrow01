@@ -2,12 +2,13 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "CMake: Configure",
+            "label": "CMake: Configure (Windows Debug)",
             "type": "shell",
             "command": "cmake",
             "args": [
                 "--preset",
-                "linux-main"
+                "windows-main",
+                "-DCMAKE_BUILD_TYPE=Debug"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -22,6 +23,46 @@
                 "panel": "dedicated",
                 "focus": false,
                 "clear": true
+            },
+            "windows": {
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                    }
+                }
+            }
+        },
+        {
+            "label": "CMake: Configure (Windows Release)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--preset",
+                "windows-main",
+                "-DCMAKE_BUILD_TYPE=Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": false,
+                "clear": true
+            },
+            "windows": {
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                    }
+                }
             }
         },
         {
@@ -38,41 +79,28 @@
                 "cwd": "${workspaceFolder}"
             },
             "dependsOn": [
-                "CMake: Configure Debug"
+                "CMake: Configure (Windows Debug)"
             ],
             "problemMatcher": [
-                "$gcc"
+                "$msCompile"
             ],
             "group": {
                 "kind": "build",
-                "isDefault": false
+                "isDefault": true
             },
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated",
                 "focus": false,
                 "clear": true
-            }
-        },
-        {
-            "label": "CMake: Configure Debug",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--preset",
-                "linux-main",
-                "-DCMAKE_BUILD_TYPE=Debug"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
             },
-            "problemMatcher": [],
-            "group": "build",
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "focus": false,
-                "clear": true
+            "windows": {
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                    }
+                }
             }
         },
         {
@@ -89,50 +117,37 @@
                 "cwd": "${workspaceFolder}"
             },
             "dependsOn": [
-                "CMake: Configure Release"
+                "CMake: Configure (Windows Release)"
             ],
             "problemMatcher": [
-                "$gcc"
+                "$msCompile"
             ],
             "group": {
                 "kind": "build",
-                "isDefault": true
+                "isDefault": false
             },
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated",
                 "focus": false,
                 "clear": true
-            }
-        },
-        {
-            "label": "CMake: Configure Release",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--preset",
-                "linux-main",
-                "-DCMAKE_BUILD_TYPE=Release"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
             },
-            "problemMatcher": [],
-            "group": "build",
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "focus": false,
-                "clear": true
+            "windows": {
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                    }
+                }
             }
         },
         {
             "label": "CMake: Clean",
             "type": "shell",
-            "command": "rm",
+            "command": "powershell",
             "args": [
-                "-rf",
-                "${workspaceFolder}/build"
+                "-Command",
+                "if (Test-Path '${workspaceFolder}/build') { Remove-Item -Recurse -Force '${workspaceFolder}/build' }"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -144,6 +159,42 @@
                 "panel": "dedicated",
                 "focus": false,
                 "clear": true
+            }
+        },
+        {
+            "label": "CMake: Rebuild (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/build",
+                "--config",
+                "Debug",
+                "--clean-first"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": [
+                "CMake: Configure (Windows Debug)"
+            ],
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": false,
+                "clear": true
+            },
+            "windows": {
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                    }
+                }
             }
         },
         {
@@ -161,10 +212,10 @@
                 "cwd": "${workspaceFolder}"
             },
             "dependsOn": [
-                "CMake: Configure Release"
+                "CMake: Configure (Windows Release)"
             ],
             "problemMatcher": [
-                "$gcc"
+                "$msCompile"
             ],
             "group": "build",
             "presentation": {
@@ -172,7 +223,28 @@
                 "panel": "dedicated",
                 "focus": false,
                 "clear": true
+            },
+            "windows": {
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                    }
+                }
             }
+        },
+        {
+            "label": "build",
+            "dependsOn": [
+                "CMake: Build (Debug)"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "problemMatcher": [
+                "$msCompile"
+            ]
         }
     ]
 }

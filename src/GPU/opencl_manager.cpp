@@ -1,10 +1,13 @@
 
 #include "GPU/opencl_manager.h"
+#include "GPU/memory_type.hpp"
+#include "GPU/gpu_memory_buffer.hpp"
 #include <iostream>
 #include <sstream>
 #include <functional>
 #include <vector>
 #include <cstring>
+#include <iomanip>
 
 namespace gpu {
 
@@ -237,6 +240,15 @@ std::string OpenCLManager::GetDeviceInfo() const {
 // ═══════════════════════════════════════════════════════════════════
 
 void OpenCLManager::ReleaseResources() {
+    // Release cached kernels
+    {
+        std::unique_lock<std::mutex> lock(kernel_cache_mutex_);
+        for (auto& [key, kernel] : kernel_cache_) {
+            if (kernel) clReleaseKernel(kernel);
+        }
+        kernel_cache_.clear();
+    }
+
     // Release cached programs
     {
         std::unique_lock<std::mutex> lock(cache_mutex_);
@@ -265,6 +277,340 @@ OpenCLManager::~OpenCLManager() {
     if (initialized_) {
         ReleaseResources();
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GPU MEMORY MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════
+
+std::unique_ptr<GPUMemoryBuffer> OpenCLManager::CreateBuffer(
+    size_t num_elements,
+    MemoryType type) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    auto buffer = std::make_unique<GPUMemoryBuffer>(
+        context_,
+        queue_,
+        num_elements,
+        type
+    );
+
+    {
+        std::unique_lock<std::mutex> lock(registry_mutex_);
+        total_allocated_bytes_ += buffer->GetSizeBytes();
+        num_buffers_++;
+    }
+
+    return buffer;
+}
+
+std::unique_ptr<GPUMemoryBuffer> OpenCLManager::CreateBufferWithData(
+    size_t num_elements,
+    const void* host_data,
+    size_t data_size_bytes,
+    MemoryType type) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    if (!host_data) {
+        throw std::invalid_argument("host_data cannot be nullptr");
+    }
+
+    // Если размер не указан, вычисляем из num_elements
+    if (data_size_bytes == 0) {
+        data_size_bytes = num_elements * sizeof(std::complex<float>);
+    }
+
+    // Создать буфер через GPUMemoryBuffer конструктор с данными (owning)
+    auto buffer = std::make_unique<GPUMemoryBuffer>(
+        context_,
+        queue_,
+        host_data,
+        data_size_bytes,
+        num_elements,
+        type
+    );
+
+    {
+        std::unique_lock<std::mutex> lock(registry_mutex_);
+        total_allocated_bytes_ += data_size_bytes;
+        num_buffers_++;
+    }
+
+    return buffer;
+}
+
+std::unique_ptr<GPUMemoryBuffer> OpenCLManager::WrapExternalBuffer(
+    cl_mem external_gpu_buffer,
+    size_t num_elements,
+    MemoryType type) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    // Validate that external buffer belongs to correct context
+    ValidateBufferContext(external_gpu_buffer);
+
+    auto buffer = std::make_unique<GPUMemoryBuffer>(
+        context_,
+        queue_,
+        external_gpu_buffer,
+        num_elements,
+        type
+    );
+
+    // Don't count external buffers in statistics
+
+    return buffer;
+}
+
+void OpenCLManager::ValidateBufferContext(cl_mem external_buffer) const {
+    if (!external_buffer) {
+        throw std::runtime_error("Invalid external buffer: nullptr");
+    }
+
+    cl_context buffer_context = nullptr;
+    cl_int err = clGetMemObjectInfo(
+        external_buffer,
+        CL_MEM_CONTEXT,
+        sizeof(cl_context),
+        &buffer_context,
+        nullptr
+    );
+
+    if (err != CL_SUCCESS) {
+        throw std::runtime_error(
+            "Failed to get buffer context: " + std::to_string(err)
+        );
+    }
+
+    if (buffer_context != context_) {
+        throw std::runtime_error(
+            "External buffer belongs to different context. "
+            "All buffers must be created through OpenCLManager::CreateBuffer() "
+            "or belong to the same context as OpenCLManager. "
+            "Error code: CL_INVALID_CONTEXT (-34)"
+        );
+    }
+}
+
+void OpenCLManager::RegisterBuffer(
+    const std::string& name,
+    std::shared_ptr<GPUMemoryBuffer> buffer) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    std::unique_lock<std::mutex> lock(registry_mutex_);
+    buffer_registry_[name] = buffer;  // weak_ptr автоматически создается
+}
+
+std::shared_ptr<GPUMemoryBuffer> OpenCLManager::GetBuffer(const std::string& name) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    std::unique_lock<std::mutex> lock(registry_mutex_);
+    auto it = buffer_registry_.find(name);
+    
+    if (it == buffer_registry_.end()) {
+        return nullptr;
+    }
+
+    // Попытаться получить shared_ptr из weak_ptr
+    return it->second.lock();
+}
+
+std::shared_ptr<GPUMemoryBuffer> OpenCLManager::GetOrCreateBuffer(
+    const std::string& name,
+    size_t num_elements,
+    MemoryType type) {
+    // Попытаться получить существующий
+    auto existing = GetBuffer(name);
+    if (existing) {
+        return existing;
+    }
+
+    // Создать новый
+    auto new_buffer = CreateBuffer(num_elements, type);
+    auto shared_buffer = std::shared_ptr<GPUMemoryBuffer>(new_buffer.release());
+    
+    // Зарегистрировать
+    RegisterBuffer(name, shared_buffer);
+    
+    return shared_buffer;
+}
+
+void OpenCLManager::PrintMemoryStatistics() const {
+    if (!initialized_) {
+        std::cout << "[WARNING] OpenCLManager not initialized\n";
+        return;
+    }
+
+    std::unique_lock<std::mutex> lock(registry_mutex_);
+
+    std::cout << "\nGPU Memory Statistics:\n";
+    std::cout << "  Total Allocated: " << std::fixed << std::setprecision(2)
+              << (total_allocated_bytes_ / (1024.0 * 1024.0)) << " MB\n";
+    std::cout << "  Active Buffers:  " << num_buffers_ << "\n";
+    std::cout << "  Registered Buffers: " << buffer_registry_.size() << "\n";
+    
+    // Подсчитать активные (не expired) буферы
+    size_t active_registered = 0;
+    for (const auto& [name, weak_buf] : buffer_registry_) {
+        if (!weak_buf.expired()) {
+            active_registered++;
+        }
+    }
+    std::cout << "  Active Registered: " << active_registered << "\n";
+}
+
+void OpenCLManager::CleanupExpiredBuffers() {
+    if (!initialized_) {
+        return;
+    }
+
+    std::unique_lock<std::mutex> lock(registry_mutex_);
+    
+    size_t removed = 0;
+    auto it = buffer_registry_.begin();
+    while (it != buffer_registry_.end()) {
+        if (it->second.expired()) {
+            it = buffer_registry_.erase(it);
+            removed++;
+        } else {
+            ++it;
+        }
+    }
+    
+    if (removed > 0) {
+        std::cout << "[INFO] Cleaned up " << removed << " expired buffer(s) from registry\n";
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KERNEL CACHING
+// ═══════════════════════════════════════════════════════════════════
+
+cl_kernel OpenCLManager::CreateKernel(cl_program program, const std::string& kernel_name) {
+    cl_int err = CL_SUCCESS;
+    cl_kernel kernel = clCreateKernel(program, kernel_name.c_str(), &err);
+    
+    if (err != CL_SUCCESS) {
+        throw std::runtime_error(
+            "Failed to create kernel '" + kernel_name + "': " + std::to_string(err)
+        );
+    }
+    
+    return kernel;
+}
+
+cl_kernel OpenCLManager::GetOrCreateKernel(cl_program program, const std::string& kernel_name) {
+    if (!initialized_) {
+        throw std::runtime_error("OpenCLManager not initialized");
+    }
+
+    // Generate cache key: program pointer + kernel name
+    // Используем адрес program как часть ключа (уникален для каждого program)
+    std::string cache_key = std::to_string(reinterpret_cast<uintptr_t>(program)) + ":" + kernel_name;
+
+    {
+        std::unique_lock<std::mutex> lock(kernel_cache_mutex_);
+
+        // Check cache
+        auto it = kernel_cache_.find(cache_key);
+        if (it != kernel_cache_.end()) {
+            kernel_cache_hits_++;
+            return it->second;
+        }
+    }
+
+    // Create kernel (outside lock - creation is fast but still)
+    cl_kernel kernel = CreateKernel(program, kernel_name);
+
+    // Store in cache
+    {
+        std::unique_lock<std::mutex> lock(kernel_cache_mutex_);
+        kernel_cache_misses_++;
+        kernel_cache_[cache_key] = kernel;
+    }
+
+    return kernel;
+}
+
+std::string OpenCLManager::GetKernelCacheStatistics() const {
+    std::unique_lock<std::mutex> lock(kernel_cache_mutex_);
+
+    std::ostringstream oss;
+    oss << "Kernel Cache Statistics:\n";
+    oss << "  Cache size: " << kernel_cache_.size() << " kernels\n";
+    oss << "  Cache hits: " << kernel_cache_hits_ << "\n";
+    oss << "  Cache misses: " << kernel_cache_misses_ << "\n";
+
+    if (kernel_cache_hits_ + kernel_cache_misses_ > 0) {
+        double hit_rate = 100.0 * kernel_cache_hits_ / (kernel_cache_hits_ + kernel_cache_misses_);
+        oss << "  Hit rate: " << hit_rate << "%\n";
+    }
+
+    return oss.str();
+}
+
+void OpenCLManager::ClearKernelCache() {
+    if (!initialized_) {
+        return;
+    }
+
+    std::unique_lock<std::mutex> lock(kernel_cache_mutex_);
+    
+    size_t count = kernel_cache_.size();
+    for (auto& [key, kernel] : kernel_cache_) {
+        if (kernel) {
+            clReleaseKernel(kernel);
+        }
+    }
+    kernel_cache_.clear();
+    
+    if (count > 0) {
+        std::cout << "[INFO] Cleared " << count << " kernel(s) from cache\n";
+    }
+}
+
+void OpenCLManager::ClearKernelsForProgram(cl_program program) {
+    if (!initialized_ || !program) {
+        return;
+    }
+
+    std::string program_prefix = std::to_string(reinterpret_cast<uintptr_t>(program)) + ":";
+    
+    std::unique_lock<std::mutex> lock(kernel_cache_mutex_);
+    
+    size_t removed = 0;
+    auto it = kernel_cache_.begin();
+    while (it != kernel_cache_.end()) {
+        // Check if this kernel belongs to the specified program
+        if (it->first.find(program_prefix) == 0) {
+            if (it->second) {
+                clReleaseKernel(it->second);
+            }
+            it = kernel_cache_.erase(it);
+            removed++;
+        } else {
+            ++it;
+        }
+    }
+    
+    if (removed > 0) {
+        std::cout << "[INFO] Cleared " << removed << " kernel(s) for program " 
+                  << reinterpret_cast<uintptr_t>(program) << "\n";
+    }
+}
+
+size_t OpenCLManager::GetKernelCacheSize() const {
+    std::unique_lock<std::mutex> lock(kernel_cache_mutex_);
+    return kernel_cache_.size();
 }
 
 } // namespace gpu

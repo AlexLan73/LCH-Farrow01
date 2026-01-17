@@ -9,7 +9,7 @@ lib/
 x64/
 
 # CMake
-CMakeCache.txt
+#CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile

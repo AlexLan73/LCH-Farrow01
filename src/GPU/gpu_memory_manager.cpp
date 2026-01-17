@@ -1,4 +1,5 @@
 #include "GPU/gpu_memory_manager.hpp"
+#include "GPU/memory_type.hpp"  // Для полного определения MemoryType
 #include <iostream>
 #include <algorithm>
 #include <iomanip>
@@ -20,6 +21,7 @@ GPUMemoryBuffer::GPUMemoryBuffer(
       queue_(queue),
       gpu_buffer_(nullptr),
       num_elements_(num_elements),
+      buffer_size_bytes_(num_elements * sizeof(std::complex<float>)),
       type_(type),
       is_external_buffer_(false),
       gpu_dirty_(false) {
@@ -38,10 +40,54 @@ GPUMemoryBuffer::GPUMemoryBuffer(
       queue_(queue),
       gpu_buffer_(external_gpu_buffer),
       num_elements_(num_elements),
+      buffer_size_bytes_(num_elements * sizeof(std::complex<float>)),
       type_(type),
       is_external_buffer_(true),
       gpu_dirty_(false) {
     // НЕ вызываем AllocateGPUBuffer() - используем готовый буфер
+    AllocatePinnedHostBuffer();
+}
+
+// Конструктор 3: OWNING с данными (создаёт буфер и копирует данные)
+GPUMemoryBuffer::GPUMemoryBuffer(
+    cl_context context,
+    cl_command_queue queue,
+    const void* host_data,
+    size_t data_size_bytes,
+    size_t num_elements,
+    MemoryType type)
+    : context_(context),
+      queue_(queue),
+      gpu_buffer_(nullptr),
+      num_elements_(num_elements),
+      buffer_size_bytes_(data_size_bytes),
+      type_(type),
+      is_external_buffer_(false),  // OWNING - буфер будет освобожден в деструкторе
+      gpu_dirty_(false) {
+    if (!host_data) {
+        throw std::invalid_argument("host_data cannot be nullptr");
+    }
+
+    cl_int error = CL_SUCCESS;
+
+    // Преобразовать MemoryType в флаги OpenCL
+    cl_mem_flags flags = CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR;
+    if (type_ == MemoryType::GPU_READ_ONLY) {
+        flags = CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR;
+    } else if (type_ == MemoryType::GPU_WRITE_ONLY) {
+        flags = CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR;
+    }
+
+    // Создать буфер с копированием данных
+    gpu_buffer_ = clCreateBuffer(
+        context_,
+        flags,
+        data_size_bytes,
+        const_cast<void*>(host_data),  // OpenCL копирует данные, исходный указатель не изменяется
+        &error
+    );
+
+    CheckCLError(error, "clCreateBuffer with CL_MEM_COPY_HOST_PTR");
     AllocatePinnedHostBuffer();
 }
 
@@ -62,6 +108,7 @@ GPUMemoryBuffer::GPUMemoryBuffer(GPUMemoryBuffer&& other) noexcept
       gpu_buffer_(other.gpu_buffer_),
       pinned_host_buffer_(std::move(other.pinned_host_buffer_)),
       num_elements_(other.num_elements_),
+      buffer_size_bytes_(other.buffer_size_bytes_),
       type_(other.type_),
       is_external_buffer_(other.is_external_buffer_),
       gpu_dirty_(other.gpu_dirty_) {
@@ -83,6 +130,7 @@ GPUMemoryBuffer& GPUMemoryBuffer::operator=(GPUMemoryBuffer&& other) noexcept {
         gpu_buffer_ = other.gpu_buffer_;
         pinned_host_buffer_ = std::move(other.pinned_host_buffer_);
         num_elements_ = other.num_elements_;
+        buffer_size_bytes_ = other.buffer_size_bytes_;
         type_ = other.type_;
         is_external_buffer_ = other.is_external_buffer_;
         gpu_dirty_ = other.gpu_dirty_;
