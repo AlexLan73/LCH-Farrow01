@@ -15,6 +15,18 @@
 #include <cmath>
 #include <stdexcept>
 #include <CL/cl.h>
+#include <algorithm>
+
+// Структура для передачи параметров синусоид в OpenCL (должна совпадать с OpenCL структурой)
+struct RaySinusoidParams {
+    cl_uint ray_index;     // Номер луча
+    cl_uint num_sinusoids; // Количество синусоид для этого луча
+    struct SinusoidParam {
+        float amplitude;    // Амплитуда
+        float period;       // Период в точках
+        float phase_deg;    // Фаза в градусах
+    } sinusoids[10];        // Максимум 10 синусоид на луч
+};
 
 namespace radar
 {
@@ -33,9 +45,11 @@ namespace radar
         kernel_lfm_basic_(nullptr),
         kernel_lfm_delayed_(nullptr),
         kernel_lfm_combined_(nullptr),
+        kernel_sinusoid_combined_(nullptr),
         buffer_signal_base_(nullptr),
         buffer_signal_delayed_(nullptr),
-        buffer_signal_combined_(nullptr)
+        buffer_signal_combined_(nullptr),
+        buffer_signal_sinusoid_(nullptr)
   {
 
     // ✅ Валидировать параметры
@@ -92,6 +106,8 @@ namespace radar
     engine_ = nullptr;
     kernel_lfm_combined_ = nullptr;
     buffer_signal_combined_.reset();
+    kernel_sinusoid_combined_ = nullptr;
+    buffer_signal_sinusoid_.reset();
 
     std::cout << "[GeneratorGPU] ✅ Destroyed" << std::endl;
   }
@@ -109,7 +125,9 @@ namespace radar
         buffer_signal_base_(std::move(other.buffer_signal_base_)),
         buffer_signal_delayed_(std::move(other.buffer_signal_delayed_)),
         kernel_lfm_combined_(other.kernel_lfm_combined_),
-        buffer_signal_combined_(std::move(other.buffer_signal_combined_))
+        buffer_signal_combined_(std::move(other.buffer_signal_combined_)),
+        kernel_sinusoid_combined_(other.kernel_sinusoid_combined_),
+        buffer_signal_sinusoid_(std::move(other.buffer_signal_sinusoid_))
   {
 
     other.engine_ = nullptr;
@@ -117,6 +135,10 @@ namespace radar
     other.kernel_lfm_delayed_ = nullptr;
     other.buffer_signal_base_.reset();
     other.buffer_signal_delayed_.reset();
+    other.kernel_lfm_combined_ = nullptr;
+    other.buffer_signal_combined_.reset();
+    other.kernel_sinusoid_combined_ = nullptr;
+    other.buffer_signal_sinusoid_.reset();
   }
 
   GeneratorGPU &GeneratorGPU::operator=(GeneratorGPU &&other) noexcept
@@ -129,6 +151,10 @@ namespace radar
       kernel_program_ = nullptr;
       buffer_signal_base_.reset();
       buffer_signal_delayed_.reset();
+      kernel_lfm_combined_ = nullptr;
+      buffer_signal_combined_.reset();
+      kernel_sinusoid_combined_ = nullptr;
+      buffer_signal_sinusoid_.reset();
 
       // Переместить от other
       engine_ = other.engine_;
@@ -141,6 +167,10 @@ namespace radar
       kernel_lfm_delayed_ = other.kernel_lfm_delayed_;
       buffer_signal_base_ = std::move(other.buffer_signal_base_);
       buffer_signal_delayed_ = std::move(other.buffer_signal_delayed_);
+      kernel_lfm_combined_ = other.kernel_lfm_combined_;
+      buffer_signal_combined_ = std::move(other.buffer_signal_combined_);
+      kernel_sinusoid_combined_ = other.kernel_sinusoid_combined_;
+      buffer_signal_sinusoid_ = std::move(other.buffer_signal_sinusoid_);
 
       // Обнулить в other
       other.engine_ = nullptr;
@@ -148,6 +178,10 @@ namespace radar
       other.kernel_lfm_delayed_ = nullptr;
       other.buffer_signal_base_.reset();
       other.buffer_signal_delayed_.reset();
+      other.kernel_lfm_combined_ = nullptr;
+      other.buffer_signal_combined_.reset();
+      other.kernel_sinusoid_combined_ = nullptr;
+      other.buffer_signal_sinusoid_.reset();
     }
     return *this;
   }
@@ -217,6 +251,12 @@ namespace radar
       throw std::runtime_error("Failed to create kernel_lfm_combined");
     }
 
+    kernel_sinusoid_combined_ = engine_->GetKernel(kernel_program_, "kernel_sinusoid_combined");
+    if (!kernel_sinusoid_combined_)
+    {
+      throw std::runtime_error("[GeneratorGPU] Failed to create kernel_sinusoid_combined");
+    }
+
     std::cout << "[GeneratorGPU] ✅ Kernels loaded successfully" << std::endl;
   }
 
@@ -237,6 +277,19 @@ typedef struct {
     float delay_degrees;
     float delay_time_ns;
 } CombinedDelayParam;
+
+typedef struct {
+    float amplitude;    // Амплитуда
+    float period;       // Период в точках
+    float phase_deg;    // Фаза в градусах
+} SinusoidParam;
+
+// Структура для передачи параметров синусоидов для каждого луча
+typedef struct {
+    uint ray_index;     // Номер луча
+    uint num_sinusoids; // Количество синусоид для этого луча
+    SinusoidParam sinusoids[10]; // Максимум 10 синусоид на луч (достаточно для большинства случаев)
+} RaySinusoidParams;
 
 // ═════════════════════════════════════════════════════════════════════════
 // KERNEL 1: БАЗОВЫЙ ЛЧМ СИГНАЛ (БЕЗ ЗАДЕРЖЕК)
@@ -411,6 +464,71 @@ __kernel void kernel_lfm_combined(
         float imag = imag1 * (1.0f - sample_frac) + imag2 * sample_frac;
         output[ray_id * num_samples + sample_id] = (float2)(real, imag);
     }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// KERNEL 4: ГЕНЕРАЦИЯ СУММЫ СИНУСОИД НА GPU
+// ═════════════════════════════════════════════════════════════════════════
+
+__kernel void kernel_sinusoid_combined(
+    __global float2 *output,           // Выходные комплексные сигналы
+    __global const RaySinusoidParams *ray_params, // Параметры синусоидов для каждого луча
+    uint num_ray_params,               // Количество описанных лучей в ray_params
+    uint num_samples,                  // Количество отсчётов на луч
+    uint num_beams                    // Количество лучей (из параметров)
+) {
+    uint gid = get_global_id(0);
+    
+    if (gid >= (uint)num_samples * num_beams) return;
+    
+    uint ray_id = gid / num_samples;
+    uint sample_id = gid % num_samples;
+    
+    if (ray_id >= num_beams || sample_id >= num_samples) return;
+    
+    float real_sum = 0.0f;
+    float imag_sum = 0.0f;
+    
+    // Найти параметры для текущего луча
+    bool ray_found = false;
+    for (uint i = 0; i < num_ray_params; i++) {
+        if (ray_params[i].ray_index == ray_id) {
+            ray_found = true;
+            uint num_sinusoids = ray_params[i].num_sinusoids;
+            
+            for (uint j = 0; j < num_sinusoids; j++) {
+                SinusoidParam sin_param = ray_params[i].sinusoids[j];
+                
+                // Вычислить фазу для текущего отсчёта
+                float phase_rad = 2.0f * 3.14159265f * (float)sample_id / sin_param.period;
+                float phase_deg_rad = sin_param.phase_deg * 3.14159265f / 180.0f;
+                float total_phase = phase_rad + phase_deg_rad;
+                
+                // Добавить к сумме
+                real_sum += sin_param.amplitude * cos(total_phase);
+                imag_sum += sin_param.amplitude * sin(total_phase);
+            }
+            break;
+        }
+    }
+    
+    // Если для луча нет параметров - использовать значения по умолчанию
+    if (!ray_found) {
+        float amp = 1.0f;
+        float period = (float)(num_samples / 2); // Период = половина количества точек
+        float phase_deg = 0.0f;
+        
+        float phase_rad = 2.0f * 3.14159265f * (float)sample_id / period;
+        float phase_deg_rad = phase_deg * 3.14159265f / 180.0f;
+        float total_phase = phase_rad + phase_deg_rad;
+        
+        real_sum = amp * cos(total_phase);
+        imag_sum = amp * sin(total_phase);
+    }
+    
+    // Записать результат
+    uint out_idx = ray_id * num_samples + sample_id;
+    output[out_idx] = (float2)(real_sum, imag_sum);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -671,9 +789,183 @@ __kernel void kernel_lfm_combined(
       }
   }
 
+  cl_mem GeneratorGPU::signal_sinusoids(
+      const SinusoidGenParams& params,
+      const RaySinusoidMap& map_ray)
+  {
+      if (!engine_) {
+          throw std::runtime_error("[GeneratorGPU] OpenCLComputeEngine not initialized");
+      }
 
+      if (!kernel_sinusoid_combined_) {
+          throw std::runtime_error("[GeneratorGPU] kernel_sinusoid_combined not loaded");
+      }
 
+      // Валидация параметров
+      if (params.num_rays == 0 || params.count_points == 0) {
+          throw std::invalid_argument(
+              "[GeneratorGPU] signal_sinusoids: num_rays and count_points must be > 0");
+      }
 
+      std::cout << "[GeneratorGPU] Generating signal_sinusoids() with "
+                << params.num_rays << " rays, " << params.count_points 
+                << " points per ray..." << std::endl;
+
+      try {
+          // ════════════════════════════════════════════════════════════════
+          // ШАГ 1: Преобразовать map в массив RaySinusoidParams
+          // ════════════════════════════════════════════════════════════════
+          
+          std::vector<RaySinusoidParams> ray_params_array;
+
+          if (map_ray.empty()) {
+              // Дефолтные параметры для всех лучей
+              std::cout << "[GeneratorGPU] Map is empty, using default parameters for all rays" << std::endl;
+              for (size_t i = 0; i < params.num_rays; ++i) {
+                  RaySinusoidParams rp;
+                  rp.ray_index = static_cast<cl_uint>(i);
+                  rp.num_sinusoids = 1;
+                  rp.sinusoids[0].amplitude = 1.0f;
+                  rp.sinusoids[0].period = static_cast<float>(params.count_points / 2); // Целая часть
+                  rp.sinusoids[0].phase_deg = 0.0f;
+                  ray_params_array.push_back(rp);
+              }
+          } else {
+              // Только описанные лучи
+              std::cout << "[GeneratorGPU] Map contains " << map_ray.size() << " ray(s)" << std::endl;
+              for (const auto& pair : map_ray) {
+                  if (pair.first < 0 || pair.first >= static_cast<int>(params.num_rays)) {
+                      std::cerr << "⚠️  Warning: ray_index " << pair.first 
+                                << " is out of range [0, " << (params.num_rays - 1) << "], skipping" << std::endl;
+                      continue;
+                  }
+
+                  RaySinusoidParams rp;
+                  rp.ray_index = static_cast<cl_uint>(pair.first);
+                  rp.num_sinusoids = static_cast<cl_uint>(std::min(pair.second.size(), size_t(10)));
+                  
+                  if (pair.second.size() > 10) {
+                      std::cerr << "⚠️  Warning: ray " << pair.first 
+                                << " has " << pair.second.size() 
+                                << " sinusoids, only first 10 will be used" << std::endl;
+                  }
+
+                  for (size_t j = 0; j < rp.num_sinusoids; ++j) {
+                      rp.sinusoids[j].amplitude = pair.second[j].amplitude;
+                      rp.sinusoids[j].period = pair.second[j].period;
+                      rp.sinusoids[j].phase_deg = pair.second[j].phase_deg;
+                  }
+                  ray_params_array.push_back(rp);
+              }
+          }
+
+          if (ray_params_array.empty()) {
+              throw std::runtime_error(
+                  "[GeneratorGPU] signal_sinusoids: No valid ray parameters after processing map");
+          }
+
+          std::cout << "[GeneratorGPU] Prepared " << ray_params_array.size() 
+                    << " ray parameter(s) for GPU" << std::endl;
+
+          // ════════════════════════════════════════════════════════════════
+          // ШАГ 2: Создать буфер параметров на GPU
+          // ════════════════════════════════════════════════════════════════
+          
+          auto params_buffer = engine_->CreateTypedBufferWithData(
+              ray_params_array,
+              gpu::MemoryType::GPU_READ_ONLY
+          );
+
+          // ════════════════════════════════════════════════════════════════
+          // ШАГ 3: Создать выходной буфер
+          // ════════════════════════════════════════════════════════════════
+          
+          size_t total_size = params.num_rays * params.count_points;
+          auto output = engine_->CreateBuffer(
+              total_size,
+              gpu::MemoryType::GPU_WRITE_ONLY
+          );
+
+          // ════════════════════════════════════════════════════════════════
+          // ШАГ 4: Установить аргументы kernel
+          // ════════════════════════════════════════════════════════════════
+          
+          cl_command_queue queue = gpu::CommandQueuePool::GetNextQueue();
+          cl_int err = CL_SUCCESS;
+
+          cl_mem output_mem = output->Get();
+          cl_mem params_mem = params_buffer->Get();
+          cl_uint num_ray_params = static_cast<cl_uint>(ray_params_array.size());
+          cl_uint num_samples = static_cast<cl_uint>(params.count_points);
+          cl_uint num_beams = static_cast<cl_uint>(params.num_rays);
+
+          err = clSetKernelArg(kernel_sinusoid_combined_, 0, sizeof(cl_mem), &output_mem);
+          if (err != CL_SUCCESS) {
+              throw std::runtime_error("clSetKernelArg 0 failed: " + std::to_string(err));
+          }
+
+          err = clSetKernelArg(kernel_sinusoid_combined_, 1, sizeof(cl_mem), &params_mem);
+          if (err != CL_SUCCESS) {
+              throw std::runtime_error("clSetKernelArg 1 failed: " + std::to_string(err));
+          }
+
+          err = clSetKernelArg(kernel_sinusoid_combined_, 2, sizeof(cl_uint), &num_ray_params);
+          if (err != CL_SUCCESS) {
+              throw std::runtime_error("clSetKernelArg 2 failed: " + std::to_string(err));
+          }
+
+          err = clSetKernelArg(kernel_sinusoid_combined_, 3, sizeof(cl_uint), &num_samples);
+          if (err != CL_SUCCESS) {
+              throw std::runtime_error("clSetKernelArg 3 failed: " + std::to_string(err));
+          }
+
+          err = clSetKernelArg(kernel_sinusoid_combined_, 4, sizeof(cl_uint), &num_beams);
+          if (err != CL_SUCCESS) {
+              throw std::runtime_error("clSetKernelArg 4 failed: " + std::to_string(err));
+          }
+
+          // ════════════════════════════════════════════════════════════════
+          // ШАГ 5: Выполнить kernel
+          // ════════════════════════════════════════════════════════════════
+          
+          size_t global_work_size = total_size;
+          size_t local_work_size = 256; // Оптимально для GPU
+
+          std::cout << "[GeneratorGPU] Executing kernel_sinusoid_combined (grid: " 
+                    << global_work_size << ", block: " << local_work_size << ")" << std::endl;
+
+          err = clEnqueueNDRangeKernel(
+              queue,
+              kernel_sinusoid_combined_,
+              1, // одномерная сетка
+              nullptr,
+              &global_work_size,
+              &local_work_size,
+              0, nullptr, nullptr
+          );
+
+          if (err != CL_SUCCESS) {
+              throw std::runtime_error(
+                  "[GeneratorGPU] clEnqueueNDRangeKernel failed with error " + 
+                  std::to_string(err));
+          }
+
+          // ════════════════════════════════════════════════════════════════
+          // ШАГ 6: Сохранить результат и вернуть
+          // ════════════════════════════════════════════════════════════════
+          
+          buffer_signal_sinusoid_ = std::move(output);
+
+          std::cout << "[GeneratorGPU] ✅ signal_sinusoids() completed" << std::endl;
+
+          return buffer_signal_sinusoid_->Get();
+
+      } catch (const std::exception& e) {
+          throw std::runtime_error(
+              std::string("[GeneratorGPU] signal_sinusoids() failed: ") + e.what()
+          );
+      }
+  }
 
   void GeneratorGPU::ClearGPU()
   {
@@ -707,11 +999,28 @@ __kernel void kernel_lfm_combined(
       return {};
     }
 
-    // ✅ Проверка, что буфер создан
-    if (!buffer_signal_base_ || !buffer_signal_base_->Get())
+    // ✅ Проверка, что хотя бы один буфер создан
+    gpu::GPUMemoryBuffer* active_buffer = nullptr;
+    if (buffer_signal_sinusoid_ && buffer_signal_sinusoid_->Get())
     {
-      std::cerr << "❌ GetSignalAsVector: buffer_signal_base_ is nullptr. "
-                << "Call signal_base() first!" << std::endl;
+      active_buffer = buffer_signal_sinusoid_.get();
+    }
+    else if (buffer_signal_combined_ && buffer_signal_combined_->Get())
+    {
+      active_buffer = buffer_signal_combined_.get();
+    }
+    else if (buffer_signal_delayed_ && buffer_signal_delayed_->Get())
+    {
+      active_buffer = buffer_signal_delayed_.get();
+    }
+    else if (buffer_signal_base_ && buffer_signal_base_->Get())
+    {
+      active_buffer = buffer_signal_base_.get();
+    }
+    else
+    {
+      std::cerr << "❌ GetSignalAsVector: No valid buffer found. "
+                << "Call signal_base(), signal_valedation(), signal_combined_delays(), or signal_sinusoids() first!" << std::endl;
       return {};
     }
 
@@ -747,7 +1056,7 @@ __kernel void kernel_lfm_combined(
       // ✅ Вызов clEnqueueReadBuffer с правильными параметрами
       cl_int err = clEnqueueReadBuffer(
           queue,                      // command_queue
-          buffer_signal_base_->Get(), // buffer (получаем cl_mem из unique_ptr)
+          active_buffer->Get(),       // buffer (получаем cl_mem из активного буфера)
           CL_TRUE,                    // blocking_read (CL_TRUE = ждём завершения)
           offset_bytes,               // offset в байтах
           size_bytes,                 // размер в байтах
@@ -798,16 +1107,34 @@ __kernel void kernel_lfm_combined(
 
     auto &core = gpu::OpenCLCore::GetInstance();
 
-    if (!buffer_signal_base_ || !buffer_signal_base_->Get())
+    // ✅ Проверка, что хотя бы один буфер создан
+    gpu::GPUMemoryBuffer* active_buffer = nullptr;
+    if (buffer_signal_sinusoid_ && buffer_signal_sinusoid_->Get())
     {
-      std::cerr << "❌ GetSignalAsVectorPartial: buffer_signal_base_ is nullptr" << std::endl;
+      active_buffer = buffer_signal_sinusoid_.get();
+    }
+    else if (buffer_signal_combined_ && buffer_signal_combined_->Get())
+    {
+      active_buffer = buffer_signal_combined_.get();
+    }
+    else if (buffer_signal_delayed_ && buffer_signal_delayed_->Get())
+    {
+      active_buffer = buffer_signal_delayed_.get();
+    }
+    else if (buffer_signal_base_ && buffer_signal_base_->Get())
+    {
+      active_buffer = buffer_signal_base_.get();
+    }
+    else
+    {
+      std::cerr << "❌ GetSignalAsVectorPartial: No valid buffer found" << std::endl;
       return {};
     }
 
     gpu::GPUMemoryBuffer buffer(
         core.GetContext(),
         gpu::CommandQueuePool::GetNextQueue(),
-        buffer_signal_base_->Get(), // Получаем cl_mem из unique_ptr
+        active_buffer->Get(), // Получаем cl_mem из активного буфера
         total_size_,
         gpu::MemoryType::GPU_READ_ONLY);
 
@@ -849,9 +1176,27 @@ __kernel void kernel_lfm_combined(
     // Конструктор:
     // GPUMemoryBuffer(context, queue, external_buffer, num_elements, type)
 
-    if (!buffer_signal_base_ || !buffer_signal_base_->Get())
+    // ✅ Проверка, что хотя бы один буфер создан
+    gpu::GPUMemoryBuffer* active_buffer = nullptr;
+    if (buffer_signal_sinusoid_ && buffer_signal_sinusoid_->Get())
     {
-      std::cerr << "❌ GetSignalAsVectorAll: buffer_signal_base_ is nullptr" << std::endl;
+      active_buffer = buffer_signal_sinusoid_.get();
+    }
+    else if (buffer_signal_combined_ && buffer_signal_combined_->Get())
+    {
+      active_buffer = buffer_signal_combined_.get();
+    }
+    else if (buffer_signal_delayed_ && buffer_signal_delayed_->Get())
+    {
+      active_buffer = buffer_signal_delayed_.get();
+    }
+    else if (buffer_signal_base_ && buffer_signal_base_->Get())
+    {
+      active_buffer = buffer_signal_base_.get();
+    }
+    else
+    {
+      std::cerr << "❌ GetSignalAsVectorAll: No valid buffer found" << std::endl;
       return {};
     }
 
@@ -860,7 +1205,7 @@ __kernel void kernel_lfm_combined(
       gpu::GPUMemoryBuffer buffer(
           core.GetContext(),                     // контекст OpenCL
           gpu::CommandQueuePool::GetNextQueue(), // очередь для операции
-          buffer_signal_base_->Get(),            // cl_mem из unique_ptr (НЕ удалится!)
+          active_buffer->Get(),                  // cl_mem из активного буфера (НЕ удалится!)
           total_size_,                           // всего элементов (num_beams * num_samples)
           gpu::MemoryType::GPU_READ_ONLY         // тип: только чтение
       );

@@ -312,12 +312,13 @@ if(OPENCL_ENABLED)
 #        src/gpuprofiling.cpp
 #        src/generator/generatorgpu.cpp
         src/generator/generator_gpu_new.cpp
-        src/GPU/opencl_manager.cpp  
+        src/GPU/opencl_manager.cpp
         src/GPU/gpu_memory_manager.cpp
         include/GPU/opencl_core.cpp
         include/GPU/kernel_program.cpp
         include/GPU/opencl_compute_engine.cpp
-        include/GPU/command_queue_pool.cpp   
+        include/GPU/command_queue_pool.cpp
+        src/Test/test_signal_sinusoids.cpp
     )
     list(APPEND HEADERS
 #        include/signalbuffer.h
@@ -335,15 +336,16 @@ if(OPENCL_ENABLED)
 #        include/generator/generatorgpu.h
         include/interface/lfm_parameters.h
         include/interface/DelayParameter.h
-        include/interface/combined_delay_param.h        
-        include/generator/generator_gpu_new.h        
-        include/GPU/opencl_manager.h     
-        include/GPU/gpu_memory_manager.hpp    
+        include/interface/combined_delay_param.h
+        include/generator/generator_gpu_new.h
+        include/GPU/opencl_manager.h
+        include/GPU/gpu_memory_manager.hpp
         include/GPU/opencl_core.hpp
         include/GPU/kernel_program.hpp
         include/GPU/opencl_compute_engine.hpp
-        include/GPU/command_queue_pool.hpp   
+        include/GPU/command_queue_pool.hpp
         include/Test/example_usage.hpp
+        include/Test/test_signal_sinusoids.hpp
 
     )
     message(STATUS "✅ OpenCL sources added")

@@ -172,6 +172,30 @@ public:
     */
 
     /**
+     * @brief Генерация сигналов как суммы синусоид для каждого луча
+     * 
+     * Генерирует комплексные сигналы на GPU, где каждый луч формируется
+     * как сумма синусоид с заданными параметрами (амплитуда, период, фаза).
+     * 
+     * ЛОГИКА:
+     * - Если map_ray пустой → генерирует все лучи с дефолтными параметрами:
+     *   amplitude=1.0, period=count_points/2, phase=0°
+     * - Если map_ray содержит только часть лучей → генерирует только эти лучи
+     * - Каждый луч = сумма всех синусоид из map_ray[ray_id]
+     * 
+     * @param params Параметры генерации (количество лучей и точек)
+     * @param map_ray Map: номер луча → вектор параметров синусоид
+     * @return cl_mem GPU адрес буфера с комплексными сигналами
+     * 
+     * @throws std::runtime_error если OpenCL операция не удалась
+     * @throws std::invalid_argument если параметры невалидны
+     */
+    cl_mem signal_sinusoids(
+        const SinusoidGenParams& params,
+        const RaySinusoidMap& map_ray
+    );
+
+    /**
      * @brief Очистить GPU память (синхронизировать очереди)
      * 
      * Вызывает Finish() на всех command queues.
@@ -295,11 +319,13 @@ private:
     cl_kernel kernel_lfm_basic_;      // kernel_lfm_basic
     cl_kernel kernel_lfm_delayed_;    // kernel_lfm_delayed
     cl_kernel kernel_lfm_combined_;   // kernel_lfm_combined_delays
+    cl_kernel kernel_sinusoid_combined_; // kernel_sinusoid_combined
 
     /// Буферы результатов (кэш) - сохраняем unique_ptr чтобы буферы не освобождались
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_base_;     // Результат signal_base()
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_delayed_;  // Результат signal_valedation()
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_combined_; // Результат signal_combined_delays()
+    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_sinusoid_; // Результат signal_sinusoid_combined()
 
     // ════════════════════════════════════════════════════════════════
     // PRIVATE METHODS - ИНИЦИАЛИЗАЦИЯ И УТИЛИТЫ
