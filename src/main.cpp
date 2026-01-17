@@ -6,12 +6,14 @@
 //#include "Test/example_signal_basic_lfm.hpp"
 //#include "Test/example_signal_delayed_lfm.hpp"
 //#include "Test/example_signal_combined_delays.hpp"
-#include "Test/test_signal_sinusoids.hpp"
+//#include "Test/test_signal_sinusoids.hpp"
+
+#include "Test/test_antenna_fft_proc_max.hpp"
 
 
 int main() {
 
-    
+   test_antenna_fft_proc_max::run_all_tests();
 
   return 0;
 }
