@@ -21,6 +21,7 @@ GPUMemoryBuffer::GPUMemoryBuffer(
       queue_(queue),
       gpu_buffer_(nullptr),
       num_elements_(num_elements),
+      buffer_size_bytes_(num_elements * sizeof(std::complex<float>)),
       type_(type),
       is_external_buffer_(false),
       gpu_dirty_(false) {
@@ -39,6 +40,7 @@ GPUMemoryBuffer::GPUMemoryBuffer(
       queue_(queue),
       gpu_buffer_(external_gpu_buffer),
       num_elements_(num_elements),
+      buffer_size_bytes_(num_elements * sizeof(std::complex<float>)),
       type_(type),
       is_external_buffer_(true),
       gpu_dirty_(false) {
@@ -58,6 +60,7 @@ GPUMemoryBuffer::GPUMemoryBuffer(
       queue_(queue),
       gpu_buffer_(nullptr),
       num_elements_(num_elements),
+      buffer_size_bytes_(data_size_bytes),
       type_(type),
       is_external_buffer_(false),  // OWNING - буфер будет освобожден в деструкторе
       gpu_dirty_(false) {
@@ -105,6 +108,7 @@ GPUMemoryBuffer::GPUMemoryBuffer(GPUMemoryBuffer&& other) noexcept
       gpu_buffer_(other.gpu_buffer_),
       pinned_host_buffer_(std::move(other.pinned_host_buffer_)),
       num_elements_(other.num_elements_),
+      buffer_size_bytes_(other.buffer_size_bytes_),
       type_(other.type_),
       is_external_buffer_(other.is_external_buffer_),
       gpu_dirty_(other.gpu_dirty_) {
@@ -126,6 +130,7 @@ GPUMemoryBuffer& GPUMemoryBuffer::operator=(GPUMemoryBuffer&& other) noexcept {
         gpu_buffer_ = other.gpu_buffer_;
         pinned_host_buffer_ = std::move(other.pinned_host_buffer_);
         num_elements_ = other.num_elements_;
+        buffer_size_bytes_ = other.buffer_size_bytes_;
         type_ = other.type_;
         is_external_buffer_ = other.is_external_buffer_;
         gpu_dirty_ = other.gpu_dirty_;

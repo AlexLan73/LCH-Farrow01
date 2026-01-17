@@ -2,6 +2,7 @@
 
 #include "opencl_core.hpp"
 #include "kernel_program.hpp"
+#include "command_queue_pool.hpp"
 #include "memory_type.hpp"
 #include "gpu_memory_buffer.hpp"
 #include <CL/cl.h>
@@ -10,6 +11,7 @@
 #include <vector>
 #include <complex>
 #include <array>
+#include <stdexcept>
 
 namespace gpu {
 
@@ -130,6 +132,15 @@ public:
         MemoryType type = MemoryType::GPU_READ_ONLY
     );
 
+    /**
+     * @brief Создать GPU буфер с начальными данными для любого POD-типа
+     */
+    template <typename T>
+    std::unique_ptr<GPUMemoryBuffer> CreateTypedBufferWithData(
+        const std::vector<T>& data,
+        MemoryType type = MemoryType::GPU_READ_ONLY
+    );
+
     // ═══════════════════════════════════════════════════════════════
     // Выполнение kernels
     // ═══════════════════════════════════════════════════════════════
@@ -230,5 +241,39 @@ private:
     size_t num_buffers_;
     size_t kernel_executions_;
 };
+
+// ==========================
+// Inline-реализации шаблонов
+// ==========================
+template <typename T>
+inline std::unique_ptr<GPUMemoryBuffer>
+OpenCLComputeEngine::CreateTypedBufferWithData(
+    const std::vector<T>& data,
+    MemoryType type)
+{
+    if (data.empty()) {
+        throw std::invalid_argument(
+            "CreateTypedBufferWithData: data vector is empty"
+        );
+    }
+
+    auto& core = OpenCLCore::GetInstance();
+    cl_command_queue queue = CommandQueuePool::GetNextQueue();
+
+    // Создаём буфер с инициализацией из памяти хоста
+    auto buffer = std::make_unique<GPUMemoryBuffer>(
+        core.GetContext(),
+        queue,
+        static_cast<const void*>(data.data()),
+        data.size() * sizeof(T),
+        data.size(),
+        type
+    );
+
+    total_allocated_bytes_ += buffer->GetSizeBytes();
+    num_buffers_++;
+
+    return buffer;
+}
 
 }  // namespace gpu

@@ -261,6 +261,9 @@ void OpenCLComputeEngine::Initialize(DeviceType device_type) {
     // Инициализировать OpenCLCore
     OpenCLCore::Initialize(device_type);
 
+    // Инициализировать CommandQueuePool
+    CommandQueuePool::Initialize();
+
     // Создать сам engine
     instance_ = std::unique_ptr<OpenCLComputeEngine>(new OpenCLComputeEngine());
     initialized_ = true;
@@ -286,6 +289,7 @@ void OpenCLComputeEngine::Cleanup() {
     if (initialized_) {
         KernelProgramCache::Clear();
         instance_.reset();
+        CommandQueuePool::Cleanup();
         OpenCLCore::Cleanup();
         initialized_ = false;
         std::cout << "[OK] OpenCLComputeEngine cleaned up\n";

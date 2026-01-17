@@ -7,6 +7,7 @@
 #include <memory>
 #include <cstdint>
 #include "interface/lfm_parameters.h"
+#include "interface/combined_delay_param.h"
 
 // Forward declarations
 namespace gpu {
@@ -17,6 +18,8 @@ namespace gpu {
 
 struct LFMParameters;
 struct DelayParameter;
+//struct CombinedDelayParam;
+
 
 namespace radar {
 
@@ -151,6 +154,48 @@ public:
     );
 
     /**
+     * @brief Сформировать ЛЧМ сигнал с комбинированной задержкой
+     * @param combined_delays Массив CombinedDelayParam (размер = num_beams)
+     * @param num_delay_params Количество элементов (должно = num_beams)
+     * @return cl_mem GPU адрес буфера с задержанными сигналами
+     */
+    cl_mem signal_combined_delays(
+        const CombinedDelayParam* combined_delays,
+        size_t num_delay_params
+    );
+    /**
+    * Угловая задержка: 0...360 градусов
+    *   delays[0].delay_degrees = 0.5f;
+    * Временная задержка: 0...много наносекунд
+    *   delays[0].delay_time_ns = 100.0f;
+    * езультат: τ_total = τ_angle + τ_time
+    */
+
+    /**
+     * @brief Генерация сигналов как суммы синусоид для каждого луча
+     * 
+     * Генерирует комплексные сигналы на GPU, где каждый луч формируется
+     * как сумма синусоид с заданными параметрами (амплитуда, период, фаза).
+     * 
+     * ЛОГИКА:
+     * - Если map_ray пустой → генерирует все лучи с дефолтными параметрами:
+     *   amplitude=1.0, period=count_points/2, phase=0°
+     * - Если map_ray содержит только часть лучей → генерирует только эти лучи
+     * - Каждый луч = сумма всех синусоид из map_ray[ray_id]
+     * 
+     * @param params Параметры генерации (количество лучей и точек)
+     * @param map_ray Map: номер луча → вектор параметров синусоид
+     * @return cl_mem GPU адрес буфера с комплексными сигналами
+     * 
+     * @throws std::runtime_error если OpenCL операция не удалась
+     * @throws std::invalid_argument если параметры невалидны
+     */
+    cl_mem signal_sinusoids(
+        const SinusoidGenParams& params,
+        const RaySinusoidMap& map_ray
+    );
+
+    /**
      * @brief Очистить GPU память (синхронизировать очереди)
      * 
      * Вызывает Finish() на всех command queues.
@@ -273,11 +318,14 @@ private:
     std::shared_ptr<gpu::KernelProgram> kernel_program_;
     cl_kernel kernel_lfm_basic_;      // kernel_lfm_basic
     cl_kernel kernel_lfm_delayed_;    // kernel_lfm_delayed
+    cl_kernel kernel_lfm_combined_;   // kernel_lfm_combined_delays
+    cl_kernel kernel_sinusoid_combined_; // kernel_sinusoid_combined
 
     /// Буферы результатов (кэш) - сохраняем unique_ptr чтобы буферы не освобождались
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_base_;     // Результат signal_base()
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_delayed_;  // Результат signal_valedation()
-
+    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_combined_; // Результат signal_combined_delays()
+    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_sinusoid_; // Результат signal_sinusoid_combined()
 
     // ════════════════════════════════════════════════════════════════
     // PRIVATE METHODS - ИНИЦИАЛИЗАЦИЯ И УТИЛИТЫ

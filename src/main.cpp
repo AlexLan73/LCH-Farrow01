@@ -3,15 +3,30 @@
 #include <CL/cl.h>
 #include "GPU/opencl_compute_engine.hpp"
 #include "Test/example_usage.hpp"
-
+//#include "Test/example_signal_basic_lfm.hpp"
+//#include "Test/example_signal_delayed_lfm.hpp"
+//#include "Test/example_signal_combined_delays.hpp"
+#include "Test/test_signal_sinusoids.hpp"
 
 
 int main() {
+
+    
+
+  return 0;
+}
+
+/**
+ * 
+ * !!! ВАЖНО !!!
+ * Примеры использования GeneratorGPU с signal_sinusoids 
+ * 
     gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
     auto& engine = gpu::OpenCLComputeEngine::GetInstance();
 
     // Показать информацию о девайсе
     std::cout << engine.GetDeviceInfo();
+    test_signal_sinusoids::run_all_tests();
 
     // ... код программы ...
 
@@ -21,7 +36,8 @@ int main() {
     std::cout << "\n╔══════════════════════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║        GeneratorGPU Examples (NEW ARCHITECTURE)                  ║" << std::endl;
     std::cout << "╚══════════════════════════════════════════════════════════════════╝\n" << std::endl;
-
+ * 
+ * примеры применения GPU OpenCL
     // Запустить примеры
     example_basic_lfm();
     example_delayed_lfm();
@@ -31,10 +47,11 @@ int main() {
     std::cout << "║                    ALL EXAMPLES COMPLETED                        ║" << std::endl;
     std::cout << "╚══════════════════════════════════════════════════════════════════╝\n" << std::endl;
 
-  return 0;
-}
-
-/**
+    example_02::test001();
+    example_02::test002();
+    example_02::test003();
+    example_02::test004();
+ * 
  * 
  * 
  int inicial_opencl_manager(){
@@ -49,6 +66,9 @@ int main() {
     std::cerr << "❌ Ошибка инициализации OpenCL: " << e.what() << std::endl;
     return 1;
   }          
+   // Запуск тестов для signal_sinusoids
+   test_signal_sinusoids::run_all_tests();
+
   return 0;
 }
 
