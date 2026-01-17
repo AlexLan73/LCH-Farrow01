@@ -229,9 +229,14 @@ namespace radar
 // ═════════════════════════════════════════════════════════════════════════
 
 typedef struct {
-    cl_uint beam_index;
+    uint beam_index;
     float delay_degrees;
 } DelayParam;
+
+typedef struct {
+    float delay_degrees;
+    float delay_time_ns;
+} CombinedDelayParam;
 
 // ═════════════════════════════════════════════════════════════════════════
 // KERNEL 1: БАЗОВЫЙ ЛЧМ СИГНАЛ (БЕЗ ЗАДЕРЖЕК)
@@ -605,25 +610,66 @@ __kernel void kernel_lfm_combined(
   }
 
   cl_mem GeneratorGPU::signal_combined_delays(
-    const CombinedDelayParam* combined_delays,
-    size_t num_delay_params) {
-    
-    if (!engine_) throw std::runtime_error("Engine not initialized");
-    if (!kernel_lfm_combined_) throw std::runtime_error("kernel not loaded");
-    if (!combined_delays) throw std::invalid_argument("combined_delays is null");
-    if (num_delay_params != num_beams_) throw std::invalid_argument("num mismatch");
-    
-    auto combined_gpu_buffer = engine_->CreateBufferWithData(
-        std::vector<CombinedDelayParam>(combined_delays, combined_delays + num_delay_params),
-        gpu::MemoryType::GPU_READ_ONLY
-    );
-    
-    auto output = engine_->CreateBuffer(total_size_, gpu::MemoryType::GPU_WRITE_ONLY);
-    ExecuteKernel(kernel_lfm_combined_, output->Get(), combined_gpu_buffer->Get());
-    
-    buffer_signal_combined_ = std::move(output);
-    return buffer_signal_combined_->Get();
-}
+      const CombinedDelayParam* combined_delays,
+      size_t num_delay_params) {
+
+      if (!engine_) {
+          throw std::runtime_error("GeneratorGPU: Engine not initialized");
+      }
+      if (!kernel_lfm_combined_) {
+          throw std::runtime_error("GeneratorGPU: kernel_lfm_combined not loaded");
+      }
+      if (!combined_delays) {
+          throw std::invalid_argument("GeneratorGPU: combined_delays is null");
+      }
+      if (num_delay_params != num_beams_) {
+          throw std::invalid_argument(
+              "GeneratorGPU: num_delay_params (" + std::to_string(num_delay_params) +
+              ") must equal num_beams (" + std::to_string(num_beams_) + ")"
+          );
+      }
+
+
+
+      try {
+          // ✅ Шаг 1: Подготовить хостовый вектор параметров
+          std::vector<CombinedDelayParam> combined_host(
+              combined_delays,
+              combined_delays + num_delay_params
+          );
+
+          // ✅ Шаг 2: Загрузить на GPU через типобезопасный API
+          auto combined_gpu_buffer = engine_->CreateTypedBufferWithData(
+              combined_host,
+              gpu::MemoryType::GPU_READ_ONLY
+          );
+
+          // ✅ Шаг 3: Создать выходной буфер
+          auto output = engine_->CreateBuffer(
+              total_size_,
+              gpu::MemoryType::GPU_WRITE_ONLY
+          );
+
+          // ✅ Шаг 4: Выполнить kernel
+          ExecuteKernel(
+              kernel_lfm_combined_,
+              output->Get(),
+              combined_gpu_buffer->Get()
+          );
+
+          // ✅ Шаг 5: Кэшировать результат и вернуть
+          buffer_signal_combined_ = std::move(output);
+
+          std::cout << "GeneratorGPU: signal_combined_delays completed." << std::endl;
+
+          return buffer_signal_combined_->Get();
+
+      } catch (const std::exception& e) {
+          throw std::runtime_error(
+              std::string("GeneratorGPU: signal_combined_delays failed: ") + e.what()
+          );
+      }
+  }
 
 
 

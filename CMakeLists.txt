@@ -451,6 +451,7 @@ endif()
 # ============================================================================
 # COMPILER OPTIONS & OPTIMIZATIONS
 # ============================================================================
+# add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /arch:AVX2 /Gy /fp:precise)
 else()
@@ -485,6 +486,7 @@ if(MSVC)
         )
     endif()
 endif()
+add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
 
 # ============================================================================
 # BUILD SUMMARY

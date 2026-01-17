@@ -87,7 +87,7 @@ public:
 
     // Размер в байтах
     size_t GetSizeBytes() const {
-        return num_elements_ * sizeof(std::complex<float>);
+        return buffer_size_bytes_;
     }
 
     // Является ли буфер внешним (non-owning)
@@ -113,6 +113,7 @@ private:
     std::vector<std::complex<float>> pinned_host_buffer_;
 
     size_t num_elements_;
+    size_t buffer_size_bytes_;
     MemoryType type_;
 
     // Флаг владения буфером (важно!)

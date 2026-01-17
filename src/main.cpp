@@ -3,7 +3,9 @@
 #include <CL/cl.h>
 #include "GPU/opencl_compute_engine.hpp"
 #include "Test/example_usage.hpp"
-
+//#include "Test/example_signal_basic_lfm.hpp"
+//#include "Test/example_signal_delayed_lfm.hpp"
+#include "Test/example_signal_combined_delays.hpp"
 
 
 int main() {
@@ -30,6 +32,12 @@ int main() {
     std::cout << "\n╔══════════════════════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║                    ALL EXAMPLES COMPLETED                        ║" << std::endl;
     std::cout << "╚══════════════════════════════════════════════════════════════════╝\n" << std::endl;
+
+    example_02::test001();
+    example_02::test002();
+    example_02::test003();
+    example_02::test004();
+    
 
   return 0;
 }
