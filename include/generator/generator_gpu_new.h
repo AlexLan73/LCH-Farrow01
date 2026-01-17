@@ -7,6 +7,7 @@
 #include <memory>
 #include <cstdint>
 #include "interface/lfm_parameters.h"
+#include "interface/combined_delay_param.h"
 
 // Forward declarations
 namespace gpu {
@@ -17,6 +18,8 @@ namespace gpu {
 
 struct LFMParameters;
 struct DelayParameter;
+//struct CombinedDelayParam;
+
 
 namespace radar {
 
@@ -151,6 +154,24 @@ public:
     );
 
     /**
+     * @brief Сформировать ЛЧМ сигнал с комбинированной задержкой
+     * @param combined_delays Массив CombinedDelayParam (размер = num_beams)
+     * @param num_delay_params Количество элементов (должно = num_beams)
+     * @return cl_mem GPU адрес буфера с задержанными сигналами
+     */
+    cl_mem signal_combined_delays(
+        const CombinedDelayParam* combined_delays,
+        size_t num_delay_params
+    );
+    /**
+    * Угловая задержка: 0...360 градусов
+    *   delays[0].delay_degrees = 0.5f;
+    * Временная задержка: 0...много наносекунд
+    *   delays[0].delay_time_ns = 100.0f;
+    * езультат: τ_total = τ_angle + τ_time
+    */
+
+    /**
      * @brief Очистить GPU память (синхронизировать очереди)
      * 
      * Вызывает Finish() на всех command queues.
@@ -273,11 +294,12 @@ private:
     std::shared_ptr<gpu::KernelProgram> kernel_program_;
     cl_kernel kernel_lfm_basic_;      // kernel_lfm_basic
     cl_kernel kernel_lfm_delayed_;    // kernel_lfm_delayed
+    cl_kernel kernel_lfm_combined_;   // kernel_lfm_combined_delays
 
     /// Буферы результатов (кэш) - сохраняем unique_ptr чтобы буферы не освобождались
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_base_;     // Результат signal_base()
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_delayed_;  // Результат signal_valedation()
-
+    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_combined_; // Результат signal_combined_delays()
 
     // ════════════════════════════════════════════════════════════════
     // PRIVATE METHODS - ИНИЦИАЛИЗАЦИЯ И УТИЛИТЫ

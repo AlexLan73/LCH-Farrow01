@@ -335,6 +335,7 @@ if(OPENCL_ENABLED)
 #        include/generator/generatorgpu.h
         include/interface/lfm_parameters.h
         include/interface/DelayParameter.h
+        include/interface/combined_delay_param.h        
         include/generator/generator_gpu_new.h        
         include/GPU/opencl_manager.h     
         include/GPU/gpu_memory_manager.hpp    
