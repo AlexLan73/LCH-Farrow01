@@ -927,12 +927,12 @@ __kernel void kernel_sinusoid_combined(
           // ════════════════════════════════════════════════════════════════
           // ШАГ 5: Выполнить kernel
           // ════════════════════════════════════════════════════════════════
-          
-          size_t global_work_size = total_size;
-          size_t local_work_size = 256; // Оптимально для GPU
 
-          std::cout << "[GeneratorGPU] Executing kernel_sinusoid_combined (grid: " 
-                    << global_work_size << ", block: " << local_work_size << ")" << std::endl;
+          size_t global_work_size = total_size;
+          size_t* p_local_work_size = nullptr; // Let OpenCL choose optimal local work size
+
+          std::cout << "[GeneratorGPU] Executing kernel_sinusoid_combined (grid: "
+                    << global_work_size << ", block: auto)" << std::endl;
 
           err = clEnqueueNDRangeKernel(
               queue,
@@ -940,7 +940,7 @@ __kernel void kernel_sinusoid_combined(
               1, // одномерная сетка
               nullptr,
               &global_work_size,
-              &local_work_size,
+              p_local_work_size,
               0, nullptr, nullptr
           );
 

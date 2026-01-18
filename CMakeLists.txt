@@ -129,94 +129,128 @@ endif()
 
 # ============================================================================
 # clFFT SUPPORT (только если OpenCL включена)
+# ==================== clFFT CONFIGURATION ====================
+# ⚠️ WINDOWS-specific: не влияет на Linux/macOS
 # ============================================================================
 if(OPENCL_ENABLED)
-    # Проверка локального clFFT в проекте
-    if(EXISTS "${CMAKE_SOURCE_DIR}/clFFT/include")
-        set(CLFFT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/clFFT/include")
-        message(STATUS "✅ Using local clFFT include: ${CLFFT_INCLUDE_DIR}")
-    endif()
+    set(CLFFT_LOCAL_DIR "${CMAKE_SOURCE_DIR}/clFFT")
     
-    if(EXISTS "${CMAKE_SOURCE_DIR}/clFFT/lib/x64")
-        if(MSVC)
-            set(CLFFT_LIBRARY "${CMAKE_SOURCE_DIR}/clFFT/lib/x64/clFFT.lib")
+    if(IS_WINDOWS)
+        # ✅ ТОЛЬКО ДЛЯ WINDOWS: ищем локальный clFFT
+        message(STATUS "[WINDOWS] Configuring clFFT for Windows...")
+        
+        # 1️⃣ Установить include директорию
+        if(EXISTS "${CLFFT_LOCAL_DIR}/include/clFFT.h")
+            set(CLFFT_INCLUDE_DIR "${CLFFT_LOCAL_DIR}/include")
+            message(STATUS "✅ clFFT headers found: ${CLFFT_INCLUDE_DIR}")
         else()
-            set(CLFFT_LIBRARY "${CMAKE_SOURCE_DIR}/clFFT/lib/x64/libclFFT.a")
+            message(WARNING "❌ clFFT headers NOT found in ${CLFFT_LOCAL_DIR}/include")
+            set(CLFFT_FOUND FALSE)
         endif()
         
-        if(EXISTS "${CLFFT_LIBRARY}")
-            message(STATUS "✅ Using local clFFT library: ${CLFFT_LIBRARY}")
-        else()
-            unset(CLFFT_LIBRARY)
-        endif()
-    endif()
-    
-    # Поиск в системных путях (если локальная не найдена)
-    if(NOT CLFFT_INCLUDE_DIR)
-        find_path(CLFFT_INCLUDE_DIR NAMES clFFT.h
-            PATHS /usr/local/include /usr/include
-            PATH_SUFFIXES clFFT
-        )
-    endif()
-    
-    if(NOT CLFFT_LIBRARY)
-        find_library(CLFFT_LIBRARY NAMES clFFT
-            PATHS /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu
-        )
-    endif()
-    
-    # Проверка, найдена ли clFFT
-    if(CLFFT_INCLUDE_DIR AND CLFFT_LIBRARY)
-        message(STATUS "✅ clFFT found!")
-        message(STATUS "   Include: ${CLFFT_INCLUDE_DIR}")
-        message(STATUS "   Library: ${CLFFT_LIBRARY}")
-        set(CLFFT_FOUND TRUE)
-    else()
-        message(WARNING "⚠️  clFFT not found")
-        message(STATUS "   Ubuntu: sudo apt install libclfft-dev")
-        message(STATUS "   Using CPU FFT fallback")
-        set(CLFFT_FOUND FALSE)
-        
-        # Опционально: скачать через FetchContent
-        option(USE_BUNDLED_CLFFT "Download and build clFFT if not found" ON)
-        if(USE_BUNDLED_CLFFT)
-            message(STATUS "📥 Attempting to download clFFT via FetchContent...")
-            include(FetchContent)
-            FetchContent_Declare(clFFT
-                GIT_REPOSITORY https://github.com/clMathLibraries/clFFT.git
-                GIT_TAG master
+        # 2️⃣ Определить lib путь для Windows (x64)
+        if(CMAKE_BUILD_TYPE MATCHES "Debug")
+            set(CLFFT_LIB_SEARCH_PATHS
+                "${CLFFT_LOCAL_DIR}/lib/x64/Debug"
+                "${CLFFT_LOCAL_DIR}/lib/x64"
             )
-            FetchContent_GetProperties(clFFT)
-            if(NOT clFFT_POPULATED)
-                FetchContent_Populate(clFFT)
-            endif()
+        else()
+            set(CLFFT_LIB_SEARCH_PATHS
+                "${CLFFT_LOCAL_DIR}/lib/x64/Release"
+                "${CLFFT_LOCAL_DIR}/lib/x64"
+            )
+        endif()
+        
+        # 3️⃣ Найти clFFT.lib
+        find_library(CLFFT_LIB
+            NAMES clFFT.lib clFFT
+            PATHS ${CLFFT_LIB_SEARCH_PATHS}
+            NO_DEFAULT_PATH
+        )
+        
+        if(CLFFT_LIB)
+            set(CLFFT_FOUND TRUE)
+            set(CLFFT_LIBRARY ${CLFFT_LIB})  # Для совместимости со старым кодом
+            message(STATUS "✅ clFFT.lib found: ${CLFFT_LIB}")
+            get_filename_component(CLFFT_LIBDIR "${CLFFT_LIB}" DIRECTORY)
+            message(STATUS "   Directory: ${CLFFT_LIBDIR}")
             
-            if(EXISTS "${clFFT_SOURCE_DIR}/CMakeLists.txt")
-                add_subdirectory(${clFFT_SOURCE_DIR} ${clFFT_BINARY_DIR} EXCLUDE_FROM_ALL)
-                
-                if(TARGET clFFT)
-                    set(CLFFT_LIBRARY clFFT)
-                    set(CLFFT_INCLUDE_DIR "${clFFT_SOURCE_DIR}/include")
-                    set(CLFFT_FOUND TRUE)
-                    message(STATUS "✅ clFFT downloaded and configured as target")
-                elseif(TARGET clFFT::clFFT)
-                    set(CLFFT_LIBRARY clFFT::clFFT)
-                    set(CLFFT_INCLUDE_DIR "${clFFT_SOURCE_DIR}/include")
-                    set(CLFFT_FOUND TRUE)
-                    message(STATUS "✅ clFFT downloaded (using clFFT::clFFT target)")
-                else()
-                    message(WARNING "⚠️  clFFT downloaded but target not found")
-                    set(CLFFT_FOUND FALSE)
-                endif()
+            # 4️⃣ Найти DLL для рантайма
+            find_file(CLFFT_DLL
+                NAMES clFFT.dll
+                PATHS "${CLFFT_LIBDIR}" "${CLFFT_LOCAL_DIR}/lib/x64"
+                NO_DEFAULT_PATH
+            )
+            
+            if(CLFFT_DLL)
+                message(STATUS "✅ clFFT.dll found: ${CLFFT_DLL}")
             else()
-                message(WARNING "⚠️  clFFT CMakeLists.txt not found in ${clFFT_SOURCE_DIR}")
-                set(CLFFT_FOUND FALSE)
+                message(WARNING "⚠️  clFFT.dll not found (may cause runtime errors)")
             endif()
+        else()
+            set(CLFFT_FOUND FALSE)
+            message(WARNING "❌ clFFT.lib NOT found on Windows")
+            message(STATUS "   Searched in:")
+            foreach(path ${CLFFT_LIB_SEARCH_PATHS})
+                message(STATUS "   - ${path}")
+            endforeach()
+        endif()
+        
+    elseif(IS_LINUX OR APPLE)
+        # ✅ ТОЛЬКО ДЛЯ LINUX/MACOS: используем системные пакеты
+        message(STATUS "[LINUX/MACOS] Configuring clFFT for Linux/macOS...")
+        
+        # Попытка 1: системный find_package
+        find_package(clFFT QUIET)
+        
+        # Попытка 2: pkg-config
+        if(NOT CLFFT_FOUND)
+            find_package(PkgConfig QUIET)
+            if(PKG_CONFIG_FOUND)
+                pkg_check_modules(CLFFT QUIET clFFT)
+                if(CLFFT_FOUND)
+                    set(CLFFT_LIB "${CLFFT_LIBRARIES}")
+                    set(CLFFT_INCLUDE_DIR "${CLFFT_INCLUDE_DIRS}")
+                    set(CLFFT_LIBRARY ${CLFFT_LIB})  # Для совместимости
+                    message(STATUS "✅ clFFT found via pkg-config")
+                endif()
+            endif()
+        endif()
+        
+        # Попытка 3: ручной поиск в стандартных местах
+        if(NOT CLFFT_FOUND)
+            find_library(CLFFT_LIB
+                NAMES clFFT
+                PATHS /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu /opt/AMD/clFFT/lib64
+            )
+            
+            find_path(CLFFT_INCLUDE_DIR
+                NAMES clFFT.h
+                PATHS /usr/local/include /usr/include /opt/AMD/clFFT/include
+            )
+            
+            if(CLFFT_LIB AND CLFFT_INCLUDE_DIR)
+                set(CLFFT_FOUND TRUE)
+                set(CLFFT_LIBRARY ${CLFFT_LIB})  # Для совместимости
+                message(STATUS "✅ clFFT found (manual search)")
+            endif()
+        endif()
+        
+        if(NOT CLFFT_FOUND)
+            message(WARNING "❌ clFFT NOT found on Linux/macOS")
+            message(STATUS "   Install with:")
+            message(STATUS "   Ubuntu/Debian: sudo apt install libclfft-dev")
+            message(STATUS "   Fedora: sudo dnf install clFFT-devel")
+            message(STATUS "   macOS: brew install amd-clpeak  (or build from source)")
+        else()
+            message(STATUS "✅ clFFT library: ${CLFFT_LIB}")
+            message(STATUS "✅ clFFT include: ${CLFFT_INCLUDE_DIR}")
         endif()
     endif()
 else()
     set(CLFFT_FOUND FALSE)
 endif()
+# ==================== END clFFT CONFIGURATION ====================
 
 # ============================================================================
 # C++ STANDARD & COMPILER FLAGS
@@ -312,6 +346,7 @@ if(OPENCL_ENABLED)
 #        src/gpuprofiling.cpp
 #        src/generator/generatorgpu.cpp
         src/generator/generator_gpu_new.cpp
+        src/fft/antenna_fft_proc_max.cpp
         src/GPU/opencl_manager.cpp
         src/GPU/gpu_memory_manager.cpp
         include/GPU/opencl_core.cpp
@@ -319,6 +354,7 @@ if(OPENCL_ENABLED)
         include/GPU/opencl_compute_engine.cpp
         include/GPU/command_queue_pool.cpp
         src/Test/test_signal_sinusoids.cpp
+        src/Test/test_antenna_fft_proc_max.cpp
     )
     list(APPEND HEADERS
 #        include/signalbuffer.h
@@ -395,24 +431,60 @@ if(OPENCL_ENABLED)
     
     message(STATUS "✅ OpenCL libraries linked")
     
-    # Добавление clFFT (если найдена)
-    if(CLFFT_FOUND)
-        target_link_libraries(${PROJECT_NAME} PRIVATE ${CLFFT_LIBRARY})
-        target_include_directories(${PROJECT_NAME} PRIVATE ${CLFFT_INCLUDE_DIR})
+    # ==================== clFFT LINKING ====================
+    if(CLFFT_FOUND AND CLFFT_LIB)
+        # Линковать clFFT
+        target_link_libraries(${PROJECT_NAME} PRIVATE "${CLFFT_LIB}")
+        target_include_directories(${PROJECT_NAME} PRIVATE "${CLFFT_INCLUDE_DIR}")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE CLFFT_FOUND=1)
         
-        target_compile_definitions(${PROJECT_NAME} PRIVATE 
-            CLFFT_FOUND=1
-        )
-        
-        message(STATUS "✅ clFFT library linked")
-        message(STATUS "   Library: ${CLFFT_LIBRARY}")
+        message(STATUS "✅ clFFT linked successfully")
+        message(STATUS "   Library: ${CLFFT_LIB}")
         message(STATUS "   Include: ${CLFFT_INCLUDE_DIR}")
+        
+        # ✅ Копировать DLL для Windows
+        if(IS_WINDOWS AND CLFFT_DLL)
+            add_custom_command(
+                TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CLFFT_DLL}"
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+                COMMENT "Copying clFFT.dll to output directory"
+            )
+            message(STATUS "✅ clFFT.dll will be copied to output directory")
+        endif()
+        
+        # Также линкуем StatTimer, если он есть (clFFT может зависеть от него)
+        if(IS_WINDOWS)
+            get_filename_component(CLFFT_LIB_DIR "${CLFFT_LIB}" DIRECTORY)
+            if(EXISTS "${CLFFT_LIB_DIR}/StatTimer.lib")
+                target_link_libraries(${PROJECT_NAME} PRIVATE "${CLFFT_LIB_DIR}/StatTimer.lib")
+                message(STATUS "✅ StatTimer.lib linked")
+                
+                # Копировать StatTimer.dll
+                if(EXISTS "${CLFFT_LIB_DIR}/StatTimer.dll")
+                    add_custom_command(
+                        TARGET ${PROJECT_NAME} POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${CLFFT_LIB_DIR}/StatTimer.dll"
+                        "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+                        COMMENT "Copying StatTimer.dll to output directory"
+                    )
+                endif()
+            endif()
+        endif()
+        
     else()
-        target_compile_definitions(${PROJECT_NAME} PRIVATE 
-            CLFFT_FOUND=0
-        )
-        message(WARNING "⚠️  clFFT not linked (using CPU FFT fallback)")
+        message(WARNING "⚠️  clFFT NOT configured")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE CLFFT_FOUND=0)
+        
+        if(IS_WINDOWS)
+            message(WARNING "   Reason: Windows - check if ${CMAKE_SOURCE_DIR}/clFFT exists")
+        else()
+            message(WARNING "   Reason: Linux/macOS - install libclfft-dev package")
+        endif()
     endif()
+    # ==================== END clFFT LINKING ====================
     
     # Путь к директории с kernel файлами
     set(OPENCL_KERNEL_DIR "${CMAKE_SOURCE_DIR}/kernels")
@@ -469,25 +541,10 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/clFFT/include")
 endif()
 
 # ============================================================================
-# COPY DLLs ON WINDOWS
+# COPY DLLs ON WINDOWS (legacy - теперь копирование в секции clFFT LINKING)
 # ============================================================================
-if(MSVC)
-    if(EXISTS "${CMAKE_SOURCE_DIR}/clFFT/lib/x64/clFFT.dll")
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_SOURCE_DIR}/clFFT/lib/x64/clFFT.dll"
-                "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-        )
-    endif()
-    
-    if(EXISTS "${CMAKE_SOURCE_DIR}/clFFT/lib/x64/StatTimer.dll")
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_SOURCE_DIR}/clFFT/lib/x64/StatTimer.dll"
-                "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-        )
-    endif()
-endif()
+# Копирование DLL теперь выполняется в секции clFFT LINKING выше
+# Эта секция оставлена для обратной совместимости, если нужно
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
 
 # ============================================================================

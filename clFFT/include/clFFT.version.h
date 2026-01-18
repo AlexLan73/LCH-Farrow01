@@ -18,7 +18,7 @@
 /* the configured version and settings for clFFT
  */
 #define clfftVersionMajor 2
-#define clfftVersionMinor 14
-#define clfftVersionPatch 0
+#define clfftVersionMinor 12
+#define clfftVersionPatch 2
 
 /* #undef CLFFT_STATIC */
