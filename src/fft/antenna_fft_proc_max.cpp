@@ -18,7 +18,10 @@ struct MaxValue {
     cl_uint index;
     float magnitude;
     float phase;
+    cl_uint pad;
 };
+
+constexpr size_t kMaxReductionPoints = 1024;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Статические члены для кэша планов
@@ -75,9 +78,6 @@ AntennaFFTProcMax::AntennaFFTProcMax(const AntennaFFTParams& params)
     if (status != CLFFT_SUCCESS) {
         throw std::runtime_error("clfftSetup failed with status: " + std::to_string(status));
     }
-    
-    // Создать reduction kernel для поиска максимумов
-    CreateMaxReductionKernel();
     
     // Инициализировать профилирование
     last_profiling_ = {};
@@ -194,7 +194,6 @@ size_t AntennaFFTProcMax::NextPowerOf2(size_t n) const {
 // ════════════════════════════════════════════════════════════════════════════
 
 AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
-    auto start_total = std::chrono::high_resolution_clock::now();
     
     // Создать или переиспользовать план FFT
     CreateOrReuseFFTPlan();
@@ -213,8 +212,9 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
                                                   gpu::MemoryType::GPU_READ_WRITE);
     }
     if (!buffer_maxima_) {
-        buffer_maxima_ = engine_->CreateBuffer(params_.beam_count * params_.max_peaks_count * sizeof(MaxValue),
-                                                gpu::MemoryType::GPU_READ_WRITE);
+        const size_t maxima_bytes = params_.beam_count * params_.max_peaks_count * sizeof(MaxValue);
+        const size_t maxima_elements = (maxima_bytes + sizeof(std::complex<float>) - 1) / sizeof(std::complex<float>);
+        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, gpu::MemoryType::GPU_READ_WRITE);
     }
     
     // Профилирование: загрузка данных
@@ -239,6 +239,9 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     // Профилирование загрузки
     last_profiling_.upload_time_ms = ProfileEvent(upload_event, "Data Upload");
     clReleaseEvent(upload_event);
+
+    // Post-callback userdata: params | complex_buffer | magnitude_buffer
+    // Инициализация не требуется - callback записывает данные напрямую
     
     // Выполнить FFT
     cl_mem fft_input = buffer_fft_input_->Get();
@@ -268,46 +271,26 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     clWaitForEvents(1, &fft_event);
     clReleaseEvent(fft_event);
 
-    // Скопировать magnitude из post_callback_userdata_ в buffer_magnitude_
-    size_t post_params_size = sizeof(cl_uint) * 4; // beam_count, nFFT, out_count_points_fft, padding
-    size_t post_magnitude_size = params_.beam_count * params_.out_count_points_fft * sizeof(float);
+    last_profiling_.post_callback_time_ms = 0.0;
 
-    cl_event copy_event = nullptr;
-    err = clEnqueueCopyBuffer(
-        queue_,
-        post_callback_userdata_,        // Источник: userdata с magnitude
-        buffer_magnitude_->Get(),       // Назначение: buffer_magnitude_
-        post_params_size,               // src_offset (после параметров)
-        0,                              // dst_offset
-        post_magnitude_size,            // size
-        0, nullptr, &copy_event
-    );
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to copy magnitude from post_callback_userdata: " + std::to_string(err));
-    }
-    clWaitForEvents(1, &copy_event);
-    clReleaseEvent(copy_event);
-
-    // Поиск максимумов для каждого луча
+    // Поиск максимумов для всех лучей одним kernel запуском
     AntennaFFTResult result(params_.beam_count, nFFT_, params_.task_id, params_.module_name);
     result.results.reserve(params_.beam_count);
-    
-    auto reduction_start = std::chrono::high_resolution_clock::now();
-    
-    for (size_t beam_idx = 0; beam_idx < params_.beam_count; ++beam_idx) {
+    last_profiling_.reduction_time_ms = 0.0;
+
+    auto all_maxima = FindMaximaAllBeamsOnGPU();
+    for (size_t beam_idx = 0; beam_idx < all_maxima.size(); ++beam_idx) {
         FFTResult beam_result(params_.out_count_points_fft, params_.task_id, params_.module_name);
-        beam_result.max_values = FindMaximaOnGPU(buffer_fft_output_->Get(), beam_idx);
+        beam_result.max_values = std::move(all_maxima[beam_idx]);
         result.results.push_back(std::move(beam_result));
     }
     
-    auto reduction_end = std::chrono::high_resolution_clock::now();
-    last_profiling_.reduction_time_ms = 
-        std::chrono::duration<double, std::milli>(reduction_end - reduction_start).count();
-    
-    // Общее время
-    auto end_total = std::chrono::high_resolution_clock::now();
-    last_profiling_.total_time_ms = 
-        std::chrono::duration<double, std::milli>(end_total - start_total).count();
+    // Общее время (сумма GPU этапов)
+    last_profiling_.total_time_ms =
+        last_profiling_.upload_time_ms +
+        last_profiling_.fft_time_ms +
+        last_profiling_.post_callback_time_ms +
+        last_profiling_.reduction_time_ms;
     
     return result;
 }
@@ -331,7 +314,7 @@ AntennaFFTResult AntennaFFTProcMax::Process(const std::vector<std::complex<float
 
 void AntennaFFTProcMax::CreateOrReuseFFTPlan() {
     // Проверить кэш
-    PlanCacheKey key{params_.beam_count, nFFT_, params_.out_count_points_fft, params_.max_peaks_count};
+    PlanCacheKey key{params_.beam_count, params_.count_points, nFFT_, params_.out_count_points_fft, params_.max_peaks_count};
     
     {
         std::lock_guard<std::mutex> lock(plan_cache_mutex_);
@@ -404,23 +387,25 @@ void AntennaFFTProcMax::CreateOrReuseFFTPlan() {
     }
 
     // Создать userdata буферы для post-callback
+    // НОВЫЙ LAYOUT (без atomic locks!): params | complex_buffer | magnitude_buffer
     struct PostCallbackUserData {
         cl_uint beam_count;
         cl_uint nFFT;
         cl_uint out_count_points_fft;
-        cl_uint padding;
+        cl_uint max_peaks_count;
     };
-
+    
     PostCallbackUserData post_cb_params = {
         static_cast<cl_uint>(params_.beam_count),
         static_cast<cl_uint>(nFFT_),
         static_cast<cl_uint>(params_.out_count_points_fft),
-        0
+        static_cast<cl_uint>(params_.max_peaks_count)
     };
-
+    
     size_t post_params_size = sizeof(PostCallbackUserData);
+    size_t post_complex_size = params_.beam_count * params_.out_count_points_fft * sizeof(cl_float2);
     size_t post_magnitude_size = params_.beam_count * params_.out_count_points_fft * sizeof(float);
-    size_t post_userdata_size = post_params_size + post_magnitude_size;
+    size_t post_userdata_size = post_params_size + post_complex_size + post_magnitude_size;
 
     if (post_callback_userdata_) {
         clReleaseMemObject(post_callback_userdata_);
@@ -526,19 +511,19 @@ std::string AntennaFFTProcMax::GetPreCallbackSource() const {
 }
 
 std::string AntennaFFTProcMax::GetPostCallbackSource() const {
-    // Post-callback: fftshift для двух диапазонов + вычисление magnitude/phase
+    // Post-callback: ТОЛЬКО fftshift + magnitude + complex write
+    // БЕЗ atomic locks! Поиск максимумов в отдельном kernel после FFT
+    // Аналогично референсу: E:\C++\Cuda\OpenCLProd\LOpenCl\Custom\Native\clFFTCallbacks.h
     return R"(
         typedef struct {
             uint beam_count;
             uint nFFT;
             uint out_count_points_fft;
-            uint padding;
+            uint max_peaks_count;
         } PostCallbackUserData;
 
         void processFFTPost(__global void* output, uint outoffset, __global void* userdata, float2 fftoutput) {
             __global PostCallbackUserData* params = (__global PostCallbackUserData*)userdata;
-            __global float2* fft_data = (__global float2*)output;
-            __global float* magnitude_buffer = (__global float*)((__global char*)userdata + sizeof(PostCallbackUserData));
 
             uint beam_count = params->beam_count;
             uint nFFT = params->nFFT;
@@ -552,245 +537,217 @@ std::string AntennaFFTProcMax::GetPostCallbackSource() const {
                 return;
             }
 
-            // Сохранить результат FFT
-            fft_data[outoffset] = fftoutput;
+            // Диапазоны для fftshift:
+            // Диапазон 1 (отрицательные частоты): [nFFT - out_count_points_fft/2, nFFT - 1]
+            // Диапазон 2 (положительные частоты): [0, out_count_points_fft/2 - 1]
+            uint half_size = out_count_points_fft / 2;
+            uint range1_start = nFFT - half_size;
 
-            // Определить два диапазона для fftshift:
-            // Диапазон 1: от [(nFFT-1)-out_count_points_fft/2] до (nFFT-1)
-            // Диапазон 2: от 0 до out_count_points_fft/2
-            uint range1_start = (nFFT - 1) - (out_count_points_fft / 2);
-            uint range1_end = nFFT - 1;
-            uint range2_start = 0;
-            uint range2_end = out_count_points_fft / 2;
+            // Быстрая проверка - 99.9% потоков выходят здесь!
+            bool in_range1 = (pos_in_fft >= range1_start);
+            bool in_range2 = (pos_in_fft < half_size);
 
-            // Проверить попадание в диапазоны
-            bool in_range1 = (pos_in_fft >= range1_start && pos_in_fft <= range1_end);
-            bool in_range2 = (pos_in_fft >= range2_start && pos_in_fft <= range2_end);
-
-            if (in_range1 || in_range2) {
-                // Вычислить magnitude
-                float magnitude = length(fftoutput);
-
-                // Вычислить индекс в выходном буфере (после fftshift)
-                uint output_idx;
-                if (in_range1) {
-                    // Диапазон 1: смещение от начала диапазона
-                    output_idx = beam_idx * out_count_points_fft + (pos_in_fft - range1_start);
-                } else {
-                    // Диапазон 2: смещение от начала диапазона + размер диапазона 1
-                    output_idx = beam_idx * out_count_points_fft + (out_count_points_fft / 2) + (pos_in_fft - range2_start);
-                }
-
-                // Записать magnitude в userdata буфер
-                if (output_idx < beam_count * out_count_points_fft) {
-                    magnitude_buffer[output_idx] = magnitude;
-                }
+            if (!in_range1 && !in_range2) {
+                return;  // Не в диапазоне fftshift - выходим быстро
             }
+
+            // Вычислить индекс в выходном буфере (после fftshift)
+            uint output_idx;
+            if (in_range1) {
+                // Отрицательные частоты → начало выходного буфера
+                output_idx = pos_in_fft - range1_start;
+            } else {
+                // Положительные частоты → после отрицательных
+                output_idx = half_size + pos_in_fft;
+            }
+
+            // Layout userdata: params | complex_buffer | magnitude_buffer
+            __global float2* complex_buffer = (__global float2*)((__global char*)userdata + sizeof(PostCallbackUserData));
+            __global float* magnitude_buffer = (__global float*)(complex_buffer + (beam_count * out_count_points_fft));
+
+            uint base_idx = beam_idx * out_count_points_fft + output_idx;
+
+            // Записать комплексный спектр (только для fftshift диапазона)
+            complex_buffer[base_idx] = fftoutput;
+
+            // Записать magnitude (без atomic - просто прямая запись)
+            magnitude_buffer[base_idx] = length(fftoutput);
         }
     )";
 }
 
 
 void AntennaFFTProcMax::CreateMaxReductionKernel() {
-    // Reduction kernel для поиска топ-N максимумов на GPU
-    std::string reduction_source = R"(
+    // Kernel для поиска top-N максимумов + вычисления phase
+    // Запускается ПОСЛЕ FFT - один work-group на beam (parallel reduction)
+    std::string reduction_kernel_source = R"(
         typedef struct {
             uint index;
             float magnitude;
             float phase;
+            uint pad;
         } MaxValue;
 
-        // Kernel для поиска топ-N максимумов через parallel reduction
-        __kernel void findTopNMaxima(
-            __global const float* magnitude_buffer,  // Буфер с magnitude после post-callback
-            __global MaxValue* output_maxima,         // Выходной буфер с топ-N максимумами
-            uint beam_idx,                            // Индекс луча
-            uint out_count_points_fft,                // Количество точек в выходном диапазоне
-            uint max_peaks_count                      // Количество максимумов для поиска
+        // Kernel для поиска top-N максимумов и вычисления phase
+        // Один work-group обрабатывает один beam
+        __kernel void findMaximaAndPhase(
+            __global const float2* complex_buffer,  // Комплексный спектр после fftshift
+            __global const float* magnitude_buffer, // Magnitude после fftshift
+            __global MaxValue* maxima_buffer,       // Выходной буфер для top-N максимумов
+            uint beam_count,
+            uint out_count_points_fft,
+            uint max_peaks_count
         ) {
-            uint gid = get_global_id(0);
-            uint total_points = out_count_points_fft;
-
-            if (gid >= total_points) return;
-
-            // Вычислить индекс в magnitude_buffer
-            uint idx = beam_idx * out_count_points_fft + gid;
-            float mag = magnitude_buffer[idx];
-
-            // Используем local memory для reduction
-            __local MaxValue local_maxima[256]; // Достаточно для большинства случаев
-
+            uint beam_idx = get_group_id(0);
             uint lid = get_local_id(0);
             uint local_size = get_local_size(0);
-
-            // Инициализировать local максимумы
+            
+            if (beam_idx >= beam_count) return;
+            
+            // Local memory для top-N максимумов этого beam
+            __local MaxValue local_max[8];  // max_peaks_count <= 8
+            __local float local_mag[1024];  // Кэш magnitude для быстрого поиска
+            __local uint local_idx[1024];   // Кэш индексов
+            
+            // Инициализация top-N (только первые потоки)
             if (lid < max_peaks_count) {
-                local_maxima[lid].index = UINT_MAX;
-                local_maxima[lid].magnitude = -1.0f;
-                local_maxima[lid].phase = 0.0f;
+                local_max[lid].index = UINT_MAX;
+                local_max[lid].magnitude = -1.0f;
+                local_max[lid].phase = 0.0f;
+                local_max[lid].pad = 0;
             }
             barrier(CLK_LOCAL_MEM_FENCE);
-
-            // Простой алгоритм: каждый поток проверяет, попадает ли его значение в топ-N
-            // Более эффективный вариант - использовать bitonic sort или heap, но для простоты используем этот
-            if (mag > 0.0f) {
-                // Найти позицию для вставки
-                for (uint i = 0; i < max_peaks_count; ++i) {
-                    if (lid < local_size && mag > local_maxima[i].magnitude) {
-                        // Сдвинуть остальные элементы
-                        for (uint j = max_peaks_count - 1; j > i; --j) {
-                            local_maxima[j] = local_maxima[j - 1];
+            
+            // Загрузить magnitude в local memory (каждый поток загружает несколько элементов)
+            uint base_offset = beam_idx * out_count_points_fft;
+            for (uint i = lid; i < out_count_points_fft; i += local_size) {
+                local_mag[i] = magnitude_buffer[base_offset + i];
+                local_idx[i] = i;
+            }
+            barrier(CLK_LOCAL_MEM_FENCE);
+            
+            // Поиск top-N (только первый поток - простой алгоритм)
+            if (lid == 0) {
+                for (uint k = 0; k < max_peaks_count; ++k) {
+                    float max_mag = -1.0f;
+                    uint max_idx = UINT_MAX;
+                    
+                    // Найти максимум среди оставшихся
+                    for (uint i = 0; i < out_count_points_fft; ++i) {
+                        if (local_mag[i] > max_mag) {
+                            max_mag = local_mag[i];
+                            max_idx = local_idx[i];
                         }
-                        // Вставить новое значение
-                        local_maxima[i].index = gid;
-                        local_maxima[i].magnitude = mag;
-                        // Phase нужно будет вычислить отдельно из FFT данных
-                        local_maxima[i].phase = 0.0f;
-                        break;
+                    }
+                    
+                    if (max_idx != UINT_MAX && max_mag > 0.0f) {
+                        // Вычислить phase
+                        float2 cval = complex_buffer[base_offset + max_idx];
+                        float phase_deg = atan2(cval.y, cval.x) * 57.2957795f;
+                        
+                        local_max[k].index = max_idx;
+                        local_max[k].magnitude = max_mag;
+                        local_max[k].phase = phase_deg;
+                        
+                        // Пометить как использованный
+                        local_mag[max_idx] = -1.0f;
                     }
                 }
             }
             barrier(CLK_LOCAL_MEM_FENCE);
-
-            // Записать результат в глобальную память (только первый поток группы)
-            if (lid == 0) {
-                for (uint i = 0; i < max_peaks_count && i < local_size; ++i) {
-                    uint out_idx = beam_idx * max_peaks_count + i;
-                    output_maxima[out_idx] = local_maxima[i];
-                }
-            }
-        }
-
-        // Упрощенный kernel для поиска максимумов (более эффективный вариант)
-        __kernel void findMaximaSimple(
-            __global const float* magnitude_buffer,
-            __global const float2* fft_data,          // FFT данные для вычисления phase
-            __global MaxValue* output_maxima,
-            uint beam_idx,
-            uint nFFT,
-            uint out_count_points_fft,
-            uint max_peaks_count
-        ) {
-            uint gid = get_global_id(0);
-            uint total_points = out_count_points_fft;
-
-            if (gid >= total_points) return;
-
-            // Вычислить индекс в magnitude_buffer
-            uint mag_idx = beam_idx * out_count_points_fft + gid;
-            float mag = magnitude_buffer[mag_idx];
-
-            if (mag <= 0.0f) return;
-
-            // Используем атомарные операции для обновления топ-N максимумов
-            // Это упрощенная версия, для лучшей производительности нужен более сложный алгоритм
-            __global MaxValue* beam_maxima = &output_maxima[beam_idx * max_peaks_count];
-
-            // Простой алгоритм: найти минимальный элемент в топ-N и заменить если нужно
-            float min_mag = beam_maxima[0].magnitude;
-            uint min_idx = 0;
-            for (uint i = 1; i < max_peaks_count; ++i) {
-                if (beam_maxima[i].magnitude < min_mag) {
-                    min_mag = beam_maxima[i].magnitude;
-                    min_idx = i;
-                }
-            }
-
-            // Если текущее значение больше минимального - заменить
-            if (mag > min_mag) {
-                // Вычислить phase из FFT данных
-                // Нужно найти соответствующий индекс в FFT данных с учетом fftshift
-                // gid - это индекс в выходном буфере после fftshift (0..out_count_points_fft-1)
-                // Нужно найти исходный индекс в FFT (0..nFFT-1)
-
-                uint fft_pos;
-                if (gid < out_count_points_fft / 2) {
-                    // Вторая половина диапазона fftshift -> начало FFT
-                    fft_pos = gid;
-                } else {
-                    // Первая половина диапазона fftshift -> конец FFT
-                    fft_pos = (nFFT - 1) - (out_count_points_fft / 2) + (gid - out_count_points_fft / 2);
-                }
-
-                uint fft_idx = beam_idx * nFFT + fft_pos;
-                if (fft_idx < beam_idx * nFFT + nFFT) {
-                    float2 fft_val = fft_data[fft_idx];
-                    float phase = atan2(fft_val.y, fft_val.x) * 57.2957795f; // Радианы в градусы
-
-                    beam_maxima[min_idx].index = gid;
-                    beam_maxima[min_idx].magnitude = mag;
-                    beam_maxima[min_idx].phase = phase;
-                }
+            
+            // Записать результаты в глобальную память
+            if (lid < max_peaks_count) {
+                uint out_idx = beam_idx * max_peaks_count + lid;
+                maxima_buffer[out_idx] = local_max[lid];
             }
         }
     )";
 
-    reduction_program_ = engine_->LoadProgram(reduction_source);
-    reduction_kernel_ = engine_->GetKernel(reduction_program_, "findMaximaSimple");
+    reduction_program_ = engine_->LoadProgram(reduction_kernel_source);
+    reduction_kernel_ = engine_->GetKernel(reduction_program_, "findMaximaAndPhase");
 }
 
-std::vector<FFTMaxResult> AntennaFFTProcMax::FindMaximaOnGPU(cl_mem fft_output, size_t beam_idx) {
-    // ВАЖНО: Поиск максимумов выполняется ТОЛЬКО на GPU через reduction kernel
-    if (!reduction_kernel_ || !buffer_magnitude_ || !buffer_fft_output_) {
-        throw std::runtime_error("Reduction kernel or buffers not initialized");
+std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGPU() {
+    if (!post_callback_userdata_) {
+        throw std::runtime_error("post_callback_userdata_ is not initialized");
     }
 
-    // Инициализировать выходной буфер максимумов нулями
+    // Layout: params | complex_buffer | magnitude_buffer
+    size_t post_params_size = sizeof(cl_uint) * 4;
+    size_t post_complex_size = params_.beam_count * params_.out_count_points_fft * sizeof(cl_float2);
+    size_t post_magnitude_size = params_.beam_count * params_.out_count_points_fft * sizeof(float);
+    size_t maxima_size = params_.beam_count * params_.max_peaks_count * sizeof(MaxValue);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 1: Создать kernel если его нет
+    // ═══════════════════════════════════════════════════════════════════════════
     
-    std::vector<MaxValue> init_maxima(params_.max_peaks_count);
-    for (size_t i = 0; i < params_.max_peaks_count; ++i) {
-        init_maxima[i].index = UINT_MAX;
-        init_maxima[i].magnitude = -1.0f;
-        init_maxima[i].phase = 0.0f;
+    if (!reduction_kernel_) {
+        CreateMaxReductionKernel();
     }
     
-    size_t offset = beam_idx * params_.max_peaks_count * sizeof(MaxValue);
-    cl_int err = clEnqueueWriteBuffer(
-        queue_,
-        buffer_maxima_->Get(),
-        CL_TRUE,
-        offset,
-        params_.max_peaks_count * sizeof(MaxValue),
-        init_maxima.data(),
-        0, nullptr, nullptr
+    // Создать буфер для результатов максимумов
+    if (!buffer_maxima_) {
+        const size_t maxima_elements = (maxima_size + sizeof(std::complex<float>) - 1) / sizeof(std::complex<float>);
+        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, gpu::MemoryType::GPU_READ_WRITE);
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 2: Создать sub-buffers для complex и magnitude
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    cl_int err;
+    cl_buffer_region complex_region = {post_params_size, post_complex_size};
+    cl_mem complex_sub_buffer = clCreateSubBuffer(
+        post_callback_userdata_,
+        CL_MEM_READ_ONLY,
+        CL_BUFFER_CREATE_TYPE_REGION,
+        &complex_region,
+        &err
     );
     if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to initialize maxima buffer: " + std::to_string(err));
+        throw std::runtime_error("Failed to create complex sub-buffer: " + std::to_string(err));
     }
     
-    // Установить аргументы kernel
-    cl_mem magnitude_mem = buffer_magnitude_->Get();
-    cl_mem fft_output_mem = buffer_fft_output_->Get();
+    cl_buffer_region magnitude_region = {post_params_size + post_complex_size, post_magnitude_size};
+    cl_mem magnitude_sub_buffer = clCreateSubBuffer(
+        post_callback_userdata_,
+        CL_MEM_READ_ONLY,
+        CL_BUFFER_CREATE_TYPE_REGION,
+        &magnitude_region,
+        &err
+    );
+    if (err != CL_SUCCESS) {
+        clReleaseMemObject(complex_sub_buffer);
+        throw std::runtime_error("Failed to create magnitude sub-buffer: " + std::to_string(err));
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 3: Запустить reduction kernel (findMaximaAndPhase)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    cl_uint beam_count = static_cast<cl_uint>(params_.beam_count);
+    cl_uint out_count_points_fft = static_cast<cl_uint>(params_.out_count_points_fft);
+    cl_uint max_peaks_count = static_cast<cl_uint>(params_.max_peaks_count);
     cl_mem maxima_mem = buffer_maxima_->Get();
     
-    err = clSetKernelArg(reduction_kernel_, 0, sizeof(cl_mem), &magnitude_mem);
-    if (err != CL_SUCCESS) throw std::runtime_error("clSetKernelArg 0 failed: " + std::to_string(err));
+    clSetKernelArg(reduction_kernel_, 0, sizeof(cl_mem), &complex_sub_buffer);
+    clSetKernelArg(reduction_kernel_, 1, sizeof(cl_mem), &magnitude_sub_buffer);
+    clSetKernelArg(reduction_kernel_, 2, sizeof(cl_mem), &maxima_mem);
+    clSetKernelArg(reduction_kernel_, 3, sizeof(cl_uint), &beam_count);
+    clSetKernelArg(reduction_kernel_, 4, sizeof(cl_uint), &out_count_points_fft);
+    clSetKernelArg(reduction_kernel_, 5, sizeof(cl_uint), &max_peaks_count);
     
-    err = clSetKernelArg(reduction_kernel_, 1, sizeof(cl_mem), &fft_output_mem);
-    if (err != CL_SUCCESS) throw std::runtime_error("clSetKernelArg 1 failed: " + std::to_string(err));
+    // Один work-group на beam, local_size подбирается автоматически
+    size_t global_work_size = params_.beam_count * 256;  // 256 потоков на beam
+    size_t local_work_size = 256;
     
-    err = clSetKernelArg(reduction_kernel_, 2, sizeof(cl_mem), &maxima_mem);
-    if (err != CL_SUCCESS) throw std::runtime_error("clSetKernelArg 2 failed: " + std::to_string(err));
-    
-    cl_uint beam_idx_uint = static_cast<cl_uint>(beam_idx);
-    err = clSetKernelArg(reduction_kernel_, 3, sizeof(cl_uint), &beam_idx_uint);
-    if (err != CL_SUCCESS) throw std::runtime_error("clSetKernelArg 3 failed: " + std::to_string(err));
-    
-    cl_uint nFFT_uint = static_cast<cl_uint>(nFFT_);
-    err = clSetKernelArg(reduction_kernel_, 4, sizeof(cl_uint), &nFFT_uint);
-    if (err != CL_SUCCESS) throw std::runtime_error("clSetKernelArg 4 failed: " + std::to_string(err));
-    
-    cl_uint out_count_uint = static_cast<cl_uint>(params_.out_count_points_fft);
-    err = clSetKernelArg(reduction_kernel_, 5, sizeof(cl_uint), &out_count_uint);
-    if (err != CL_SUCCESS) throw std::runtime_error("clSetKernelArg 5 failed: " + std::to_string(err));
-    
-    cl_uint max_peaks_uint = static_cast<cl_uint>(params_.max_peaks_count);
-    err = clSetKernelArg(reduction_kernel_, 6, sizeof(cl_uint), &max_peaks_uint);
-    if (err != CL_SUCCESS) throw std::runtime_error("clSetKernelArg 6 failed: " + std::to_string(err));
-    
-    // Выполнить kernel
-    size_t global_work_size = params_.out_count_points_fft;
-    size_t local_work_size = 256; // Оптимальный размер для большинства GPU
+    // Ограничение: out_count_points_fft <= 1024 для local memory
+    if (params_.out_count_points_fft > 1024) {
+        local_work_size = 64;  // Уменьшить для больших размеров
+        global_work_size = params_.beam_count * local_work_size;
+    }
     
     cl_event reduction_event = nullptr;
     err = clEnqueueNDRangeKernel(
@@ -802,48 +759,66 @@ std::vector<FFTMaxResult> AntennaFFTProcMax::FindMaximaOnGPU(cl_mem fft_output, 
         &local_work_size,
         0, nullptr, &reduction_event
     );
+    
     if (err != CL_SUCCESS) {
-        throw std::runtime_error("clEnqueueNDRangeKernel failed: " + std::to_string(err));
+        clReleaseMemObject(complex_sub_buffer);
+        clReleaseMemObject(magnitude_sub_buffer);
+        throw std::runtime_error("Failed to enqueue reduction kernel: " + std::to_string(err));
     }
     
-    // Ждать завершения
+    // Профилирование
+    last_profiling_.reduction_time_ms = ProfileEvent(reduction_event, "Reduction + Phase");
     clWaitForEvents(1, &reduction_event);
     clReleaseEvent(reduction_event);
     
-    // Прочитать результаты с GPU
-    std::vector<MaxValue> maxima_result(params_.max_peaks_count);
+    clReleaseMemObject(complex_sub_buffer);
+    clReleaseMemObject(magnitude_sub_buffer);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 4: Прочитать результаты с GPU
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    std::vector<MaxValue> maxima_result(params_.beam_count * params_.max_peaks_count);
     err = clEnqueueReadBuffer(
         queue_,
         buffer_maxima_->Get(),
         CL_TRUE,
-        offset,
-        params_.max_peaks_count * sizeof(MaxValue),
+        0,
+        maxima_size,
         maxima_result.data(),
         0, nullptr, nullptr
     );
     if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to read maxima from GPU: " + std::to_string(err));
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 5: Преобразовать в FFTMaxResult
+    // ═══════════════════════════════════════════════════════════════════════════
     
-    // Конвертировать в FFTMaxResult
-    std::vector<FFTMaxResult> result;
-    result.reserve(params_.max_peaks_count);
-    
-    for (size_t i = 0; i < params_.max_peaks_count; ++i) {
-        if (maxima_result[i].index != UINT_MAX && maxima_result[i].magnitude > 0.0f) {
-            FFTMaxResult max_result;
-            max_result.index_point = maxima_result[i].index;
-            max_result.amplitude = maxima_result[i].magnitude;
-            max_result.phase = maxima_result[i].phase;
-            result.push_back(max_result);
+    std::vector<std::vector<FFTMaxResult>> all_results;
+    all_results.resize(params_.beam_count);
+    for (size_t beam_idx = 0; beam_idx < params_.beam_count; ++beam_idx) {
+        auto& beam_out = all_results[beam_idx];
+        beam_out.reserve(params_.max_peaks_count);
+        for (size_t i = 0; i < params_.max_peaks_count; ++i) {
+            const auto& mv = maxima_result[beam_idx * params_.max_peaks_count + i];
+            if (mv.index != UINT_MAX && mv.magnitude > 0.0f) {
+                FFTMaxResult max_result;
+                max_result.index_point = mv.index;
+                max_result.amplitude = mv.magnitude;
+                max_result.phase = mv.phase;
+                beam_out.push_back(max_result);
+            }
         }
     }
-    
-    return result;
+
+    return all_results;
 }
 
 double AntennaFFTProcMax::ProfileEvent(cl_event event, const std::string& operation_name) {
     if (!event) return 0.0;
+    (void)operation_name;
     
     cl_ulong start_time, end_time;
     cl_int err;
@@ -880,25 +855,31 @@ void AntennaFFTProcMax::PrintResults(const AntennaFFTResult& result) const {
     }
 }
 
-void AntennaFFTProcMax::SaveResultsToFile(const AntennaFFTResult& result, const std::string& filepath) const {
-    std::string full_path = filepath;
-    if (filepath.find("/") != 0 && filepath.find(":\\") == std::string::npos) {
+void AntennaFFTProcMax::SaveResultsToFile(const AntennaFFTResult& result, const std::string& filepath) {
+    std::string base_path = filepath;
+    if (filepath.empty()) {
+        base_path = "antenna_result.md";
+    }
+    if (base_path.find("/") != 0 && base_path.find(":\\") == std::string::npos) {
         // Относительный путь - добавить Reports/
-        full_path = "Reports/" + filepath;
+        base_path = "Reports/" + base_path;
     }
-    
-    // Создать директорию если нужно
-    size_t last_slash = full_path.find_last_of("/\\");
-    if (last_slash != std::string::npos) {
-        std::string dir = full_path.substr(0, last_slash);
-        // TODO: Создать директорию если не существует (можно использовать filesystem или system)
+
+    // Привести к базовому имени без расширения
+    std::string base_no_ext = base_path;
+    size_t dot_pos = base_no_ext.find_last_of('.');
+    if (dot_pos != std::string::npos) {
+        base_no_ext = base_no_ext.substr(0, dot_pos);
     }
-    
-    std::ofstream file(full_path);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file for writing: " + full_path);
+
+    std::string md_path = base_no_ext + ".md";
+    std::string json_path = base_no_ext + ".json";
+
+    std::ofstream md_file(md_path);
+    if (!md_file.is_open()) {
+        throw std::runtime_error("Failed to open file for writing: " + md_path);
     }
-    
+
     // Получить timestamp
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -910,72 +891,124 @@ void AntennaFFTProcMax::SaveResultsToFile(const AntennaFFTResult& result, const 
     #endif
     char time_str[64];
     std::strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_buf);
-    
+
     // Записать таблицу
-    file << "# AntennaFFTProcMax Results\n\n";
-    file << "**Generated:** " << time_str << "\n\n";
-    file << "**Task ID:** " << result.task_id << "\n";
-    file << "**Module:** " << result.module_name << "\n";
-    file << "**Total Beams:** " << result.total_beams << "\n";
-    file << "**nFFT:** " << result.nFFT << "\n\n";
-    
-    file << "## Results by Beam\n\n";
-    file << "| Beam | Index | Amplitude | Phase (deg) |\n";
-    file << "|------|-------|-----------|-------------|\n";
-    
+    md_file << "# AntennaFFTProcMax Results\n\n";
+    md_file << "**Generated:** " << time_str << "\n\n";
+    md_file << "**Task ID:** " << result.task_id << "\n";
+    md_file << "**Module:** " << result.module_name << "\n";
+    md_file << "**Total Beams:** " << result.total_beams << "\n";
+    md_file << "**nFFT:** " << result.nFFT << "\n\n";
+
+    md_file << "## Profiling (GPU events)\n\n";
+    md_file << "Upload Time:        " << std::fixed << std::setprecision(3) << last_profiling_.upload_time_ms << " ms\n";
+    md_file << "FFT Time:           " << std::fixed << std::setprecision(3) << last_profiling_.fft_time_ms << " ms\n";
+    md_file << "Post-Callback Time: " << std::fixed << std::setprecision(3) << last_profiling_.post_callback_time_ms << " ms\n";
+    md_file << "Reduction Time:     " << std::fixed << std::setprecision(3) << last_profiling_.reduction_time_ms << " ms\n";
+    md_file << "Total Time:         " << std::fixed << std::setprecision(3) << last_profiling_.total_time_ms << " ms\n\n";
+
+    md_file << "## Results by Beam\n\n";
+    md_file << "| Beam | Index | Amplitude | Phase (deg) |\n";
+    md_file << "|------|-------|-----------|-------------|\n";
+
     for (size_t i = 0; i < result.results.size(); ++i) {
         const auto& beam_result = result.results[i];
         if (beam_result.max_values.empty()) {
-            file << "| " << i << " | - | - | - |\n";
+            md_file << "| " << i << " | - | - | - |\n";
         } else {
             for (size_t j = 0; j < beam_result.max_values.size(); ++j) {
                 const auto& max_val = beam_result.max_values[j];
-                file << "| " << i << " | " << max_val.index_point 
-                     << " | " << std::fixed << std::setprecision(6) << max_val.amplitude
-                     << " | " << std::setprecision(2) << max_val.phase << " |\n";
+                md_file << "| " << i << " | " << max_val.index_point
+                        << " | " << std::fixed << std::setprecision(6) << max_val.amplitude
+                        << " | " << std::setprecision(2) << max_val.phase << " |\n";
             }
         }
     }
-    
-    // Записать JSON
-    file << "\n## JSON Format\n\n";
-    file << "```json\n";
-    file << "{\n";
-    file << "  \"task_id\": \"" << result.task_id << "\",\n";
-    file << "  \"module_name\": \"" << result.module_name << "\",\n";
-    file << "  \"total_beams\": " << result.total_beams << ",\n";
-    file << "  \"nFFT\": " << result.nFFT << ",\n";
-    file << "  \"results\": [\n";
-    
+
+    md_file.close();
+
+    std::ofstream json_file(json_path);
+    if (!json_file.is_open()) {
+        throw std::runtime_error("Failed to open file for writing: " + json_path);
+    }
+
+    // Считать FFT комплексный вектор (fftshift) из post_callback_userdata_
+    std::vector<std::complex<float>> fft_data;
+    if (post_callback_userdata_) {
+        size_t post_params_size = sizeof(cl_uint) * 4;
+        size_t post_complex_size = params_.beam_count * params_.out_count_points_fft * sizeof(cl_float2);
+        fft_data.resize(params_.beam_count * params_.out_count_points_fft);
+        cl_int err = clEnqueueReadBuffer(
+            queue_,
+            post_callback_userdata_,
+            CL_TRUE,
+            post_params_size,
+            post_complex_size,
+            fft_data.data(),
+            0, nullptr, nullptr
+        );
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to read complex FFT data from post_callback_userdata: " + std::to_string(err));
+        }
+    }
+
+    json_file << "{\n";
+    json_file << "  \"task_id\": \"" << result.task_id << "\",\n";
+    json_file << "  \"module_name\": \"" << result.module_name << "\",\n";
+    json_file << "  \"total_beams\": " << result.total_beams << ",\n";
+    json_file << "  \"nFFT\": " << result.nFFT << ",\n";
+    json_file << "  \"profiling_ms\": {\n";
+    json_file << "    \"upload\": " << std::fixed << std::setprecision(3) << last_profiling_.upload_time_ms << ",\n";
+    json_file << "    \"fft\": " << std::fixed << std::setprecision(3) << last_profiling_.fft_time_ms << ",\n";
+    json_file << "    \"post_callback\": " << std::fixed << std::setprecision(3) << last_profiling_.post_callback_time_ms << ",\n";
+    json_file << "    \"reduction\": " << std::fixed << std::setprecision(3) << last_profiling_.reduction_time_ms << ",\n";
+    json_file << "    \"total\": " << std::fixed << std::setprecision(3) << last_profiling_.total_time_ms << "\n";
+    json_file << "  },\n";
+    json_file << "  \"results\": [\n";
+
     for (size_t i = 0; i < result.results.size(); ++i) {
         const auto& beam_result = result.results[i];
-        file << "    {\n";
-        file << "      \"beam_index\": " << i << ",\n";
-        file << "      \"v_fft\": " << beam_result.v_fft << ",\n";
-        file << "      \"max_values\": [\n";
-        
+        json_file << "    {\n";
+        json_file << "      \"beam_index\": " << i << ",\n";
+        json_file << "      \"v_fft\": " << beam_result.v_fft << ",\n";
+        json_file << "      \"max_values\": [\n";
+
         for (size_t j = 0; j < beam_result.max_values.size(); ++j) {
             const auto& max_val = beam_result.max_values[j];
-            file << "        {\n";
-            file << "          \"index_point\": " << max_val.index_point << ",\n";
-            file << "          \"amplitude\": " << std::fixed << std::setprecision(6) << max_val.amplitude << ",\n";
-            file << "          \"phase\": " << std::setprecision(2) << max_val.phase << "\n";
-            file << "        }";
-            if (j < beam_result.max_values.size() - 1) file << ",";
-            file << "\n";
+            json_file << "        {\n";
+            json_file << "          \"index_point\": " << max_val.index_point << ",\n";
+            json_file << "          \"amplitude\": " << std::fixed << std::setprecision(6) << max_val.amplitude << ",\n";
+            json_file << "          \"phase\": " << std::fixed << std::setprecision(2) << max_val.phase << "\n";
+            json_file << "        }";
+            if (j < beam_result.max_values.size() - 1) json_file << ",";
+            json_file << "\n";
         }
-        
-        file << "      ]\n";
-        file << "    }";
-        if (i < result.results.size() - 1) file << ",";
-        file << "\n";
+
+        json_file << "      ],\n";
+        json_file << "      \"fft_complex\": [\n";
+        if (!fft_data.empty()) {
+            size_t beam_offset = i * params_.out_count_points_fft;
+            for (size_t k = 0; k < params_.out_count_points_fft; ++k) {
+                size_t idx = beam_offset + k;
+                if (idx < fft_data.size()) {
+                    json_file << "        [" << std::fixed << std::setprecision(6)
+                              << fft_data[idx].real() << ", " << fft_data[idx].imag() << "]";
+                } else {
+                    json_file << "        [0.0, 0.0]";
+                }
+                if (k + 1 < params_.out_count_points_fft) json_file << ",";
+                json_file << "\n";
+            }
+        }
+        json_file << "      ]\n";
+        json_file << "    }";
+        if (i < result.results.size() - 1) json_file << ",";
+        json_file << "\n";
     }
-    
-    file << "  ]\n";
-    file << "}\n";
-    file << "```\n";
-    
-    file.close();
+
+    json_file << "  ]\n";
+    json_file << "}\n";
+    json_file.close();
 }
 
 std::string AntennaFFTProcMax::GetProfilingStats() const {

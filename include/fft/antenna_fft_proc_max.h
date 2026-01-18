@@ -97,7 +97,7 @@ public:
      * @param result Результаты обработки
      * @param filepath Путь к файлу (будет создан в Reports/ если путь относительный)
      */
-    void SaveResultsToFile(const AntennaFFTResult& result, const std::string& filepath) const;
+    void SaveResultsToFile(const AntennaFFTResult& result, const std::string& filepath);
     
     /**
      * @brief Получить статистику профилирования последней операции
@@ -178,7 +178,7 @@ private:
      * @param beam_idx Индекс луча
      * @return Вектор FFTMaxResult с найденными максимумами
      */
-    std::vector<FFTMaxResult> FindMaximaOnGPU(cl_mem fft_output, size_t beam_idx);
+    std::vector<std::vector<FFTMaxResult>> FindMaximaAllBeamsOnGPU();
     
     /**
      * @brief Профилировать событие OpenCL
@@ -236,12 +236,14 @@ private:
     // Кэш для планов FFT (ключ: hash параметров)
     struct PlanCacheKey {
         size_t beam_count;
+        size_t count_points;
         size_t nFFT;
         size_t out_count_points_fft;
         size_t max_peaks_count;
         
         bool operator==(const PlanCacheKey& other) const {
             return beam_count == other.beam_count &&
+                   count_points == other.count_points &&
                    nFFT == other.nFFT &&
                    out_count_points_fft == other.out_count_points_fft &&
                    max_peaks_count == other.max_peaks_count;
@@ -251,9 +253,10 @@ private:
     struct PlanCacheKeyHash {
         size_t operator()(const PlanCacheKey& key) const {
             return std::hash<size_t>()(key.beam_count) ^
-                   (std::hash<size_t>()(key.nFFT) << 1) ^
-                   (std::hash<size_t>()(key.out_count_points_fft) << 2) ^
-                   (std::hash<size_t>()(key.max_peaks_count) << 3);
+                   (std::hash<size_t>()(key.count_points) << 1) ^
+                   (std::hash<size_t>()(key.nFFT) << 2) ^
+                   (std::hash<size_t>()(key.out_count_points_fft) << 3) ^
+                   (std::hash<size_t>()(key.max_peaks_count) << 4);
         }
     };
     

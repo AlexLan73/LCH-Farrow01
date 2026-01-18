@@ -62,7 +62,7 @@ void test_basic_with_generator() {
         std::cout << processor.GetProfilingStats() << "\n";
         
         // Сохранить результаты в файл
-        processor.SaveResultsToFile(result, "test_basic_result.md");
+        processor.SaveResultsToFile(result, "antenna_result.md");
         std::cout << "Results saved to Reports/test_basic_result.md\n";
         
         std::cout << "\n✅ Test 1 passed!\n";
