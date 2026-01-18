@@ -156,17 +156,17 @@ private:
      * @brief Освободить clFFT план
      */
     void ReleaseFFTPlan();
-    
+
     /**
      * @brief Создать pre-callback строку для clFFT
      */
     std::string GetPreCallbackSource() const;
-    
+
     /**
      * @brief Создать post-callback строку для clFFT
      */
     std::string GetPostCallbackSource() const;
-    
+
     /**
      * @brief Создать reduction kernel для поиска максимумов
      */
@@ -212,10 +212,11 @@ private:
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_magnitude_;  // Буфер для magnitude (после post-callback)
     std::unique_ptr<gpu::GPUMemoryBuffer> buffer_maxima_;     // Буфер для максимумов (после reduction)
     
+    
     // Userdata буферы для callback'ов
     cl_mem pre_callback_userdata_;         // Userdata для pre-callback
     cl_mem post_callback_userdata_;        // Userdata для post-callback
-    
+
     // Reduction kernel
     std::shared_ptr<gpu::KernelProgram> reduction_program_;  // Программа для reduction
     cl_kernel reduction_kernel_;           // Kernel для поиска максимумов
