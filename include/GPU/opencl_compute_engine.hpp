@@ -5,6 +5,8 @@
 #include "command_queue_pool.hpp"
 #include "memory_type.hpp"
 #include "gpu_memory_buffer.hpp"
+#include "svm_capabilities.hpp"
+#include "hybrid_buffer.hpp"
 #include <CL/cl.h>
 #include <memory>
 #include <string>
@@ -193,6 +195,63 @@ public:
      * @brief Ждать завершения нескольких событий
      */
     void WaitForEvents(const std::vector<cl_event>& events);
+
+    // ═══════════════════════════════════════════════════════════════
+    // НОВАЯ СИСТЕМА ПАМЯТИ (SVM/Hybrid)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * @brief Создать фабрику буферов с автовыбором стратегии
+     * @param config Конфигурация (опционально)
+     * @return unique_ptr на BufferFactory
+     * 
+     * @code
+     * auto factory = engine.CreateBufferFactory();
+     * auto buffer = factory->Create(1024);  // Автовыбор SVM/Regular
+     * @endcode
+     */
+    std::unique_ptr<BufferFactory> CreateBufferFactory(
+        const BufferConfig& config = BufferConfig::Default()
+    );
+
+    /**
+     * @brief Создать буфер с автовыбором стратегии (удобный метод)
+     * @param num_elements Количество элементов
+     * @param mem_type Тип памяти
+     * @return unique_ptr на IMemoryBuffer
+     */
+    std::unique_ptr<IMemoryBuffer> CreateHybridBuffer(
+        size_t num_elements,
+        MemoryType mem_type = MemoryType::GPU_READ_WRITE
+    );
+
+    /**
+     * @brief Создать буфер с конкретной стратегией
+     * @param num_elements Количество элементов
+     * @param strategy Стратегия (REGULAR, SVM_COARSE, etc.)
+     * @param mem_type Тип памяти
+     * @return unique_ptr на IMemoryBuffer
+     */
+    std::unique_ptr<IMemoryBuffer> CreateBufferWithStrategy(
+        size_t num_elements,
+        MemoryStrategy strategy,
+        MemoryType mem_type = MemoryType::GPU_READ_WRITE
+    );
+
+    /**
+     * @brief Получить SVM capabilities текущего устройства
+     */
+    SVMCapabilities GetSVMCapabilities() const;
+
+    /**
+     * @brief Проверить поддержку SVM
+     */
+    bool IsSVMSupported() const;
+
+    /**
+     * @brief Получить информацию о SVM
+     */
+    std::string GetSVMInfo() const;
 
     // ═══════════════════════════════════════════════════════════════
     // Информация и статистика

@@ -6,6 +6,10 @@
 #include <map>
 #include <mutex>
 #include <stdexcept>
+#include <array>
+
+// Forward declaration для SVMCapabilities
+namespace gpu { struct SVMCapabilities; }
 
 namespace gpu {
 
@@ -122,6 +126,37 @@ public:
      * @brief Получить максимальный размер работы для одного измерения
      */
     std::array<size_t, 3> GetMaxWorkItemSizes() const;
+
+    // ═══════════════════════════════════════════════════════════════
+    // SVM (Shared Virtual Memory) информация - OpenCL 2.0+
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * @brief Получить версию OpenCL (major)
+     */
+    cl_uint GetOpenCLVersionMajor() const;
+
+    /**
+     * @brief Получить версию OpenCL (minor)
+     */
+    cl_uint GetOpenCLVersionMinor() const;
+
+    /**
+     * @brief Проверить поддержку SVM
+     * @return true если OpenCL >= 2.0 и хотя бы один тип SVM поддерживается
+     */
+    bool IsSVMSupported() const;
+
+    /**
+     * @brief Получить SVM capabilities устройства
+     * Включает header "svm_capabilities.hpp" для полного определения
+     */
+    SVMCapabilities GetSVMCapabilities() const;
+
+    /**
+     * @brief Получить информацию о SVM (красивый вывод)
+     */
+    std::string GetSVMInfo() const;
 
     // ═══════════════════════════════════════════════════════════════
     // Деструктор

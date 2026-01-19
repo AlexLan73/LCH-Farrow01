@@ -445,6 +445,63 @@ std::string OpenCLComputeEngine::GetCacheStatistics() const {
     return KernelProgramCache::GetCacheStatistics();
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Новая система памяти (SVM/Hybrid)
+// ════════════════════════════════════════════════════════════════════════════
+
+std::unique_ptr<BufferFactory> OpenCLComputeEngine::CreateBufferFactory(
+    const BufferConfig& config) {
+    
+    auto& core = OpenCLCore::GetInstance();
+    cl_command_queue queue = CommandQueuePool::GetNextQueue();
+    
+    return std::make_unique<BufferFactory>(
+        core.GetContext(),
+        queue,
+        core.GetDevice(),
+        config
+    );
+}
+
+std::unique_ptr<IMemoryBuffer> OpenCLComputeEngine::CreateHybridBuffer(
+    size_t num_elements,
+    MemoryType mem_type) {
+    
+    auto factory = CreateBufferFactory();
+    auto buffer = factory->Create(num_elements, mem_type);
+    
+    total_allocated_bytes_ += buffer->GetSizeBytes();
+    num_buffers_++;
+    
+    return buffer;
+}
+
+std::unique_ptr<IMemoryBuffer> OpenCLComputeEngine::CreateBufferWithStrategy(
+    size_t num_elements,
+    MemoryStrategy strategy,
+    MemoryType mem_type) {
+    
+    auto factory = CreateBufferFactory();
+    auto buffer = factory->CreateWithStrategy(num_elements, strategy, mem_type);
+    
+    total_allocated_bytes_ += buffer->GetSizeBytes();
+    num_buffers_++;
+    
+    return buffer;
+}
+
+SVMCapabilities OpenCLComputeEngine::GetSVMCapabilities() const {
+    return OpenCLCore::GetInstance().GetSVMCapabilities();
+}
+
+bool OpenCLComputeEngine::IsSVMSupported() const {
+    return OpenCLCore::GetInstance().IsSVMSupported();
+}
+
+std::string OpenCLComputeEngine::GetSVMInfo() const {
+    return OpenCLCore::GetInstance().GetSVMInfo();
+}
+
 OpenCLComputeEngine::~OpenCLComputeEngine() {
     // Автоматическая очистка при удалении
 }

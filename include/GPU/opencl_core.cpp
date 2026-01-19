@@ -1,9 +1,11 @@
 #include "opencl_core.hpp"
+#include "svm_capabilities.hpp"
 #include <iostream>
 #include <iomanip>
 #include <vector>
 #include <sstream>
 #include <array>
+#include <cstdio>
 
 namespace gpu {
 
@@ -247,6 +249,93 @@ std::string OpenCLCore::GetDeviceInfo() const {
 
     oss << "\n" << std::string(70, '=') << "\n\n";
 
+    return oss.str();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SVM методы
+// ════════════════════════════════════════════════════════════════════════════
+
+cl_uint OpenCLCore::GetOpenCLVersionMajor() const {
+    char version_str[256] = {0};
+    cl_int err = clGetDeviceInfo(device_, CL_DEVICE_VERSION, sizeof(version_str), version_str, nullptr);
+    if (err != CL_SUCCESS) return 0;
+    
+    int major = 0, minor = 0;
+    if (sscanf(version_str, "OpenCL %d.%d", &major, &minor) >= 1) {
+        return static_cast<cl_uint>(major);
+    }
+    return 0;
+}
+
+cl_uint OpenCLCore::GetOpenCLVersionMinor() const {
+    char version_str[256] = {0};
+    cl_int err = clGetDeviceInfo(device_, CL_DEVICE_VERSION, sizeof(version_str), version_str, nullptr);
+    if (err != CL_SUCCESS) return 0;
+    
+    int major = 0, minor = 0;
+    if (sscanf(version_str, "OpenCL %d.%d", &major, &minor) == 2) {
+        return static_cast<cl_uint>(minor);
+    }
+    return 0;
+}
+
+bool OpenCLCore::IsSVMSupported() const {
+    if (GetOpenCLVersionMajor() < 2) {
+        return false;
+    }
+    
+    cl_device_svm_capabilities svm_caps = 0;
+    cl_int err = clGetDeviceInfo(device_, CL_DEVICE_SVM_CAPABILITIES, sizeof(svm_caps), &svm_caps, nullptr);
+    
+    return (err == CL_SUCCESS && svm_caps != 0);
+}
+
+SVMCapabilities OpenCLCore::GetSVMCapabilities() const {
+    return SVMCapabilities::Query(device_);
+}
+
+std::string OpenCLCore::GetSVMInfo() const {
+    std::ostringstream oss;
+    
+    oss << "\n" << std::string(60, '═') << "\n";
+    oss << "SVM Capabilities\n";
+    oss << std::string(60, '═') << "\n\n";
+    
+    cl_uint major = GetOpenCLVersionMajor();
+    cl_uint minor = GetOpenCLVersionMinor();
+    
+    oss << std::left << std::setw(25) << "OpenCL Version:" << major << "." << minor << "\n";
+    
+    if (major < 2) {
+        oss << std::left << std::setw(25) << "SVM Supported:" << "NO (OpenCL < 2.0)\n";
+        oss << std::string(60, '═') << "\n";
+        return oss.str();
+    }
+    
+    cl_device_svm_capabilities svm_caps = 0;
+    cl_int err = clGetDeviceInfo(device_, CL_DEVICE_SVM_CAPABILITIES, sizeof(svm_caps), &svm_caps, nullptr);
+    
+    if (err != CL_SUCCESS || svm_caps == 0) {
+        oss << std::left << std::setw(25) << "SVM Supported:" << "NO\n";
+        oss << std::string(60, '═') << "\n";
+        return oss.str();
+    }
+    
+    oss << std::left << std::setw(25) << "SVM Supported:" << "YES ✅\n\n";
+    
+    oss << "SVM Types:\n";
+    oss << "  " << std::left << std::setw(23) << "Coarse-Grain Buffer:" 
+        << ((svm_caps & CL_DEVICE_SVM_COARSE_GRAIN_BUFFER) ? "YES ✅" : "NO ❌") << "\n";
+    oss << "  " << std::left << std::setw(23) << "Fine-Grain Buffer:" 
+        << ((svm_caps & CL_DEVICE_SVM_FINE_GRAIN_BUFFER) ? "YES ✅" : "NO ❌") << "\n";
+    oss << "  " << std::left << std::setw(23) << "Fine-Grain System:" 
+        << ((svm_caps & CL_DEVICE_SVM_FINE_GRAIN_SYSTEM) ? "YES ✅" : "NO ❌") << "\n";
+    oss << "  " << std::left << std::setw(23) << "Atomics:" 
+        << ((svm_caps & CL_DEVICE_SVM_ATOMICS) ? "YES ✅" : "NO ❌") << "\n";
+    
+    oss << "\n" << std::string(60, '═') << "\n";
+    
     return oss.str();
 }
 
