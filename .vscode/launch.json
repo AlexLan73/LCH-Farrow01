@@ -2,46 +2,60 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug LCH-Farrow1 (Windows)",
-            "type": "cppvsdbg",
+            "name": "Debug LCH-Farrow1 (Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/Debug/LCH-Farrow1.exe",
+            "program": "${workspaceFolder}/build/LCH-Farrow1",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "CMake: Build (Debug)",
+            "externalConsole": false,
             "MIMode": "gdb",
-            "miDebuggerPath": "",
-            "externalConsole": false
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Show source code in disassembly",
+                    "text": "-gdb-set disassemble-next-line on",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build (Linux)",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "logging": {
+                "moduleLoad": false,
+                "trace": false,
+                "engineLogging": false,
+                "programOutput": true,
+                "exceptions": true
+            },
+            "justMyCode": false,
+            "showDisplayString": true
         },
         {
-            "name": "Debug LCH-Farrow1 (Windows - Release)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/Release/LCH-Farrow1.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "CMake: Build (Release)",
+            "name": "Debug LCH-Farrow1 (Linux, Attach to Process)",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "${workspaceFolder}/build/LCH-Farrow1",
+            "processId": "${command:pickProcess}",
             "MIMode": "gdb",
-            "miDebuggerPath": "",
-            "externalConsole": false
-        },
-        {
-            "name": "Debug LCH-Farrow1 (Windows - No Build)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/Debug/LCH-Farrow1.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "integratedTerminal",
-            "externalConsole": false
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "miDebuggerPath": "/usr/bin/gdb"
         }
     ]
 }

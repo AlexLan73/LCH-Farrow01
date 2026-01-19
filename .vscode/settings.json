@@ -1,77 +1,49 @@
 {
-    // CMake настройки
-    "cmake.configureOnOpen": false,
-    "cmake.buildDirectory": "${workspaceFolder}/build",
-    "cmake.generator": "Visual Studio 17 2022",
-    "cmake.configureSettings": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "ENABLE_OPENCL": "ON",
-        "ENABLE_CUDA": "OFF"
-    },
-    "cmake.sourceDirectory": "${workspaceFolder}",
-    "cmake.useCMakePresets": true,
-    
-    // C++ настройки
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+    "C_Cpp.default.cppStandard": "c++17",
     "C_Cpp.default.includePath": [
         "${workspaceFolder}/include",
-        "${workspaceFolder}/include/**",
-        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include",
-        "${workspaceFolder}/clFFT/include"
+        "${workspaceFolder}/include/GPU",
+        "${workspaceFolder}/include/interface",
+        "${workspaceFolder}/include/generator",
+        "${workspaceFolder}/include/Test",
+        "${workspaceFolder}/clFFT/include",
+        "/usr/include",
+        "/usr/include/CL",
+        "/usr/local/include"
     ],
     "C_Cpp.default.defines": [
-        "OPENCL_ENABLED=1",
-        "_CRT_SECURE_NO_WARNINGS",
-        "_CRT_NONSTD_NO_WARNINGS"
+        "OPENCL_ENABLED=1"
     ],
-    "C_Cpp.default.compilerPath": "",
-    "C_Cpp.default.cStandard": "c17",
-    "C_Cpp.default.cppStandard": "c++17",
-    "C_Cpp.default.intelliSenseMode": "windows-msvc-x64",
-    "C_Cpp.default.browse": {
-        "path": [
-            "${workspaceFolder}",
-            "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include"
-        ],
-        "limitSymbolsToIncludedHeaders": false
-    },
-    
-    // IntelliSense настройки
-    "C_Cpp.intelliSenseEngine": "default",
-    "C_Cpp.errorSquiggles": "enabled",
-    "C_Cpp.autocomplete": "default",
-    
-    // Файлы
     "files.associations": {
-        "*.h": "c",
-        "*.hpp": "cpp",
-        "*.cl": "opencl",
-        "*.cu": "cuda"
+        "*.cl": "opencl"
     },
-    
-    // Исключения для поиска
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureSettings": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_OPENCL": "ON"
+    },
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[c]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "explorer.openEditors.visible": 5,
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.cwd": "${workspaceFolder}",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
     "search.exclude": {
         "**/build": true,
         "**/cmake-build-*": true,
         "**/.git": true,
         "**/node_modules": true
     },
-    
-    // Исключения для файлов
     "files.exclude": {
         "**/.git": true,
         "**/.DS_Store": true
-    },
-    
-    // Терминал
-    "terminal.integrated.defaultProfile.windows": "PowerShell",
-    "terminal.integrated.cwd": "${workspaceFolder}",
-    
-    // Editor
-    "editor.formatOnSave": false,
-    "editor.tabSize": 4,
-    "editor.insertSpaces": true,
-    
-    // CMake Tools расширение (если установлено)
-    "cmake-tools.buildDirectory": "${workspaceFolder}/build",
-    "cmake-tools.configureOnOpen": false
+    }
 }

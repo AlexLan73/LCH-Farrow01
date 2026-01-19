@@ -93,7 +93,7 @@ struct AntennaFFTResult {
     
     AntennaFFTResult(size_t beams, size_t fft_size, 
                      const std::string& task = "", const std::string& module = "")
-        : total_beams(beams), nFFT(fft_size), task_id(task), module_name(module) {
+        : results(), task_id(task), module_name(module), total_beams(beams), nFFT(fft_size) {
         results.reserve(beams);
     }
 };

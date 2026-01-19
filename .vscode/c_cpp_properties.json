@@ -1,33 +1,36 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/include",
-                "${workspaceFolder}/include/**",
-                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include",
-                "${workspaceFolder}/clFFT/include"
+                "${workspaceFolder}/include/GPU",
+                "${workspaceFolder}/include/interface",
+                "${workspaceFolder}/include/generator",
+                "${workspaceFolder}/include/Test",
+                "${workspaceFolder}/clFFT/include",
+                "/usr/include",
+                "/usr/local/include",
+                "/usr/include/CL"
             ],
             "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE",
                 "OPENCL_ENABLED=1",
-                "_CRT_SECURE_NO_WARNINGS",
-                "_CRT_NONSTD_NO_WARNINGS"
+                "CLFFT_FOUND=1"
             ],
-            "windowsSdkVersion": "10.0.22000.0",
-            "compilerPath": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/Hostx64/x64/cl.exe",
+            "compilerPath": "/usr/bin/g++",
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "windows-msvc-x64",
+            "intelliSenseMode": "linux-gcc-x64",
             "configurationProvider": "ms-vscode.cmake-tools",
-            "compileCommands": "${workspaceFolder}/compile_commands.json",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
             "browse": {
                 "path": [
                     "${workspaceFolder}",
-                    "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include"
+                    "${workspaceFolder}/include",
+                    "${workspaceFolder}/clFFT/include",
+                    "/usr/include",
+                    "/usr/local/include"
                 ],
                 "limitSymbolsToIncludedHeaders": false
             }

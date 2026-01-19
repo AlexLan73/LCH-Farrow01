@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <climits>  // Для UINT_MAX
 
 namespace antenna_fft {
 
@@ -217,43 +218,49 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
         buffer_maxima_ = engine_->CreateBuffer(maxima_elements, gpu::MemoryType::GPU_READ_WRITE);
     }
     
-    // Профилирование: загрузка данных
-    // Скопировать входные данные из input_signal в pre_callback_userdata буфер
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EVENT-BASED PIPELINE: Минимизация синхронизации между этапами
+    // Upload → FFT → Reduction → Read (один wait в конце!)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    cl_int err;
+    cl_event upload_event = nullptr;
+    cl_event fft_event = nullptr;
+    cl_event reduction_event = nullptr;
+    cl_event read_event = nullptr;
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 1: Upload (async, возвращает event)
+    // ═══════════════════════════════════════════════════════════════════════════
     size_t pre_params_size = sizeof(cl_uint) * 4; // beam_count, count_points, nFFT, padding
     size_t pre_input_size = params_.beam_count * params_.count_points * sizeof(std::complex<float>);
 
-    cl_event upload_event = nullptr;
-    cl_int err = clEnqueueCopyBuffer(
+    err = clEnqueueCopyBuffer(
         queue_,
         input_signal,                    // Источник: входной сигнал
         pre_callback_userdata_,          // Назначение: userdata буфер
         0,                               // src_offset
         pre_params_size,                 // dst_offset (после параметров)
         pre_input_size,                  // size
-        0, nullptr, &upload_event
+        0, nullptr, &upload_event        // ← Возвращает event
     );
     if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to copy input data to pre_callback_userdata: " + std::to_string(err));
     }
 
-    // Профилирование загрузки
-    last_profiling_.upload_time_ms = ProfileEvent(upload_event, "Data Upload");
-    clReleaseEvent(upload_event);
-
-    // Post-callback userdata: params | complex_buffer | magnitude_buffer
-    // Инициализация не требуется - callback записывает данные напрямую
-    
-    // Выполнить FFT
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 2: FFT (зависит от upload_event)
+    // ═══════════════════════════════════════════════════════════════════════════
     cl_mem fft_input = buffer_fft_input_->Get();
     cl_mem fft_output = buffer_fft_output_->Get();
-    cl_event fft_event = nullptr;
+    
     clfftStatus status = clfftEnqueueTransform(
         plan_handle_,
         CLFFT_FORWARD,
         1,
         &queue_,
-        0,
-        nullptr,
+        1,                    // ← num_events_in_wait_list
+        &upload_event,        // ← Зависимость от upload!
         &fft_event,
         &fft_input,
         &fft_output,
@@ -261,24 +268,43 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     );
     
     if (status != CLFFT_SUCCESS) {
+        clReleaseEvent(upload_event);
         throw std::runtime_error("clfftEnqueueTransform failed with status: " + std::to_string(status));
     }
-    
-    // Профилирование FFT
-    last_profiling_.fft_time_ms = ProfileEvent(fft_event, "FFT Execution");
-    
-    // Ждать завершения FFT
-    clWaitForEvents(1, &fft_event);
-    clReleaseEvent(fft_event);
 
     last_profiling_.post_callback_time_ms = 0.0;
 
-    // Поиск максимумов для всех лучей одним kernel запуском
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЭТАП 3: Reduction + Read (зависит от fft_event, БЕЗ промежуточного wait!)
+    // ═══════════════════════════════════════════════════════════════════════════
+    auto all_maxima = FindMaximaAllBeamsOnGPU(fft_event, &reduction_event, &read_event);
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ЕДИНСТВЕННОЕ ОЖИДАНИЕ - В САМОМ КОНЦЕ PIPELINE!
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (read_event) {
+        clWaitForEvents(1, &read_event);
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Профилирование (после завершения всех операций)
+    // ═══════════════════════════════════════════════════════════════════════════
+    last_profiling_.upload_time_ms = ProfileEvent(upload_event, "Data Upload");
+    last_profiling_.fft_time_ms = ProfileEvent(fft_event, "FFT Execution");
+    last_profiling_.reduction_time_ms = ProfileEvent(reduction_event, "Reduction + Phase");
+    
+    // Освободить events
+    if (upload_event) clReleaseEvent(upload_event);
+    if (fft_event) clReleaseEvent(fft_event);
+    if (reduction_event) clReleaseEvent(reduction_event);
+    if (read_event) clReleaseEvent(read_event);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Формирование результатов (данные уже прочитаны)
+    // ═══════════════════════════════════════════════════════════════════════════
     AntennaFFTResult result(params_.beam_count, nFFT_, params_.task_id, params_.module_name);
     result.results.reserve(params_.beam_count);
-    last_profiling_.reduction_time_ms = 0.0;
 
-    auto all_maxima = FindMaximaAllBeamsOnGPU();
     for (size_t beam_idx = 0; beam_idx < all_maxima.size(); ++beam_idx) {
         FFTResult beam_result(params_.out_count_points_fft, params_.task_id, params_.module_name);
         beam_result.max_values = std::move(all_maxima[beam_idx]);
@@ -708,7 +734,11 @@ __kernel void findMaximaAndPhase(
 // METHOD 3: FindMaximaAllBeamsOnGPU()
 // ════════════════════════════════════════════════════════════════════════════
 
-std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGPU() {
+std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGPU(
+    cl_event wait_event,
+    cl_event* out_reduction_event,
+    cl_event* out_read_event
+) {
     if (!post_callback_userdata_) {
         throw std::runtime_error("post_callback_userdata_ is not initialized");
     }
@@ -763,7 +793,7 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
         throw std::runtime_error("Failed to create magnitude sub-buffer: " + std::to_string(err));
     }
     
-    // STAGE 3: Запусти reduction kernel
+    // STAGE 3: Запусти reduction kernel (с зависимостью от wait_event!)
     cl_uint beam_count = static_cast<cl_uint>(params_.beam_count);
     cl_uint search_range_cl = static_cast<cl_uint>(search_range);
     cl_uint max_peaks_count = static_cast<cl_uint>(params_.max_peaks_count);
@@ -787,7 +817,13 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
         global_work_size = params_.beam_count * local_work_size;
     }
     
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EVENT-BASED: Reduction зависит от wait_event (fft_event)
+    // ═══════════════════════════════════════════════════════════════════════════
     cl_event reduction_event = nullptr;
+    cl_uint num_wait_events = (wait_event != nullptr) ? 1 : 0;
+    const cl_event* wait_list = (wait_event != nullptr) ? &wait_event : nullptr;
+    
     err = clEnqueueNDRangeKernel(
         queue_,
         reduction_kernel_,
@@ -795,7 +831,9 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
         nullptr,
         &global_work_size,
         &local_work_size,
-        0, nullptr, &reduction_event
+        num_wait_events,      // ← Зависимость от FFT!
+        wait_list,            // ← wait_event (fft_event)
+        &reduction_event
     );
     
     if (err != CL_SUCCESS) {
@@ -804,30 +842,65 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
         throw std::runtime_error("Failed to enqueue reduction kernel: " + std::to_string(err));
     }
     
-    last_profiling_.reduction_time_ms = ProfileEvent(reduction_event, "Reduction + Phase");
-    clWaitForEvents(1, &reduction_event);
-    clReleaseEvent(reduction_event);
+    // Вернуть reduction_event если запрошено (ownership переходит к вызывающему)
+    if (out_reduction_event) {
+        *out_reduction_event = reduction_event;
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STAGE 4: NON-BLOCKING Read (зависит от reduction_event)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // Статический буфер для результатов (переиспользуется)
+    static thread_local std::vector<MaxValue> maxima_result;
+    maxima_result.resize(params_.beam_count * params_.max_peaks_count);
+    
+    cl_event read_event = nullptr;
+    err = clEnqueueReadBuffer(
+        queue_,
+        buffer_maxima_->Get(),
+        CL_FALSE,             // ← NON-BLOCKING!
+        0,
+        maxima_size,
+        maxima_result.data(),
+        1,                    // ← Зависимость от reduction!
+        &reduction_event,
+        &read_event
+    );
+    
+    if (err != CL_SUCCESS) {
+        clReleaseEvent(reduction_event);
+        clReleaseMemObject(complex_sub_buffer);
+        clReleaseMemObject(magnitude_sub_buffer);
+        throw std::runtime_error("Failed to read maxima from GPU: " + std::to_string(err));
+    }
+    
+    // Вернуть read_event если запрошено (ownership переходит к вызывающему)
+    if (out_read_event) {
+        *out_read_event = read_event;
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ОЖИДАНИЕ ЧТЕНИЯ (только если не возвращаем event наружу)
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (!out_read_event) {
+        // Если вызывающий не хочет event - ждём здесь
+        clWaitForEvents(1, &read_event);
+        clReleaseEvent(read_event);
+    }
+    
+    if (!out_reduction_event) {
+        clReleaseEvent(reduction_event);
+    }
     
     clReleaseMemObject(complex_sub_buffer);
     clReleaseMemObject(magnitude_sub_buffer);
     
-    // STAGE 4: Читай результаты с GPU
-    std::vector<MaxValue> maxima_result(params_.beam_count * params_.max_peaks_count);
-    err = clEnqueueReadBuffer(
-        queue_,
-        buffer_maxima_->Get(),
-        CL_TRUE,
-        0,
-        maxima_size,
-        maxima_result.data(),
-        0, nullptr, nullptr
-    );
-    
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to read maxima from GPU: " + std::to_string(err));
-    }
-    
+    // ═══════════════════════════════════════════════════════════════════════════
     // STAGE 5: Конвертируй в FFTMaxResult
+    // ВАЖНО: Если out_read_event != nullptr, вызывающий ДОЛЖЕН дождаться read_event
+    //        перед использованием результатов!
+    // ═══════════════════════════════════════════════════════════════════════════
     std::vector<std::vector<FFTMaxResult>> all_results;
     all_results.resize(params_.beam_count);
     
@@ -968,23 +1041,46 @@ void AntennaFFTProcMax::SaveResultsToFile(const AntennaFFTResult& result, const 
         throw std::runtime_error("Failed to open file for writing: " + json_path);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
     // Считать FFT комплексный вектор (fftshift) из post_callback_userdata_
+    // ВАЖНО: Убедиться что все операции завершены перед чтением!
+    // ═══════════════════════════════════════════════════════════════════════════
     std::vector<std::complex<float>> fft_data;
     if (post_callback_userdata_) {
+        // Синхронизировать queue перед чтением
+        clFinish(queue_);
+        
         size_t post_params_size = sizeof(cl_uint) * 4;
         size_t post_complex_size = params_.beam_count * params_.out_count_points_fft * sizeof(cl_float2);
-        fft_data.resize(params_.beam_count * params_.out_count_points_fft);
-        cl_int err = clEnqueueReadBuffer(
-            queue_,
-            post_callback_userdata_,
-            CL_TRUE,
-            post_params_size,
-            post_complex_size,
-            fft_data.data(),
-            0, nullptr, nullptr
-        );
+        
+        // Проверить размер буфера
+        size_t buffer_size = 0;
+        cl_int err = clGetMemObjectInfo(post_callback_userdata_, CL_MEM_SIZE, sizeof(size_t), &buffer_size, nullptr);
         if (err != CL_SUCCESS) {
-            throw std::runtime_error("Failed to read complex FFT data from post_callback_userdata: " + std::to_string(err));
+            std::cerr << "⚠️  Warning: Failed to get post_callback_userdata_ size: " << err 
+                      << ". Skipping FFT data read.\n";
+        } else if (buffer_size < post_params_size + post_complex_size) {
+            std::cerr << "⚠️  Warning: post_callback_userdata_ too small (" << buffer_size 
+                      << " < " << (post_params_size + post_complex_size) 
+                      << "). Skipping FFT data read.\n";
+        } else {
+            // Читать данные
+            fft_data.resize(params_.beam_count * params_.out_count_points_fft);
+            err = clEnqueueReadBuffer(
+                queue_,
+                post_callback_userdata_,
+                CL_TRUE,  // Blocking read
+                post_params_size,
+                post_complex_size,
+                fft_data.data(),
+                0, nullptr, nullptr
+            );
+            if (err != CL_SUCCESS) {
+                // Не бросаем исключение - просто логируем и продолжаем без FFT данных
+                std::cerr << "⚠️  Warning: Failed to read complex FFT data from post_callback_userdata: " 
+                          << err << " (CL error code). Continuing without FFT data in JSON.\n";
+                fft_data.clear();  // Очистить чтобы не записывать пустые данные
+            }
         }
     }
 

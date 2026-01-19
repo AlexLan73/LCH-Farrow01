@@ -173,12 +173,17 @@ private:
     void CreateMaxReductionKernel();
     
     /**
-     * @brief Выполнить поиск максимумов на GPU
-     * @param fft_output Буфер с результатами FFT
-     * @param beam_idx Индекс луча
+     * @brief Выполнить поиск максимумов на GPU (event-based pipeline)
+     * @param wait_event Событие для ожидания перед запуском (может быть nullptr)
+     * @param out_reduction_event Выходное событие reduction kernel (может быть nullptr)
+     * @param out_read_event Выходное событие чтения результатов (может быть nullptr)
      * @return Вектор FFTMaxResult с найденными максимумами
      */
-    std::vector<std::vector<FFTMaxResult>> FindMaximaAllBeamsOnGPU();
+    std::vector<std::vector<FFTMaxResult>> FindMaximaAllBeamsOnGPU(
+        cl_event wait_event = nullptr,
+        cl_event* out_reduction_event = nullptr,
+        cl_event* out_read_event = nullptr
+    );
     
     /**
      * @brief Профилировать событие OpenCL
