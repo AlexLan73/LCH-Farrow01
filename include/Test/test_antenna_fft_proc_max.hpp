@@ -43,6 +43,18 @@ void test_profiling();
 void test_output();
 
 /**
+ * @brief Тест 6: ProcessNew() с малыми данными (5 лучей, 1000 точек)
+ * Ожидается: SINGLE BATCH (полная обработка без разбиения на батчи)
+ */
+void test_process_new_small();
+
+/**
+ * @brief Тест 7: ProcessNew() с большими данными (256 лучей, 1300000 точек)
+ * Ожидается: MULTI-BATCH (batch processing из-за ограничений памяти)
+ */
+void test_process_new_large();
+
+/**
  * @brief Запуск всех тестов
  */
 void run_all_tests();

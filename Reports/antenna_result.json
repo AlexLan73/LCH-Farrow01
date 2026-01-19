@@ -4,11 +4,11 @@
   "total_beams": 56,
   "nFFT": 262144,
   "profiling_ms": {
-    "upload": 0.363,
+    "upload": 0.399,
     "fft": 0.707,
     "post_callback": 0.004,
     "reduction": 0.000,
-    "total": 1.073
+    "total": 1.110
   },
   "results": [
     {

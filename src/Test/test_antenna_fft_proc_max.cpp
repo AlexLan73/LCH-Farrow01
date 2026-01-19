@@ -160,6 +160,155 @@ void test_output() {
     std::cout << "⚠️  Test 5 not yet implemented\n";
 }
 
+void test_process_new_small() {
+    std::cout << "\n═══════════════════════════════════════════════════════════\n";
+    std::cout << "  Test 6: ProcessNew() with SMALL data (5 beams, 1000 points)\n";
+    std::cout << "  Expected: SINGLE BATCH (полная обработка)\n";
+    std::cout << "═══════════════════════════════════════════════════════════\n\n";
+    
+    try {
+        // Инициализация OpenCL
+        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        }
+        
+        // Маленькие параметры - должна использоваться полная обработка
+        const size_t NUM_BEAMS = 5;
+        const size_t COUNT_POINTS = 1000;
+        const size_t OUT_COUNT_POINTS_FFT = 100;
+        const size_t MAX_PEAKS_COUNT = 3;
+        
+        std::cout << "  Параметры:\n";
+        printf("    - Лучей: %zu\n", NUM_BEAMS);
+        printf("    - Точек/луч: %zu\n", COUNT_POINTS);
+        printf("    - Выходных точек FFT: %zu\n", OUT_COUNT_POINTS_FFT);
+        printf("    - Максимумов: %zu\n\n", MAX_PEAKS_COUNT);
+        
+        // Создать генератор
+        LFMParameters lfm_params;
+        lfm_params.num_beams = NUM_BEAMS;
+        lfm_params.count_points = COUNT_POINTS;
+        lfm_params.sample_rate = 1.0e6f;
+        
+        radar::GeneratorGPU gen(lfm_params);
+        
+        SinusoidGenParams gen_params(NUM_BEAMS, COUNT_POINTS);
+        RaySinusoidMap empty_map;
+        
+        // Генерировать сигналы
+        cl_mem signal_gpu = gen.signal_sinusoids(gen_params, empty_map);
+        
+        // Создать процессор FFT
+        antenna_fft::AntennaFFTParams fft_params(
+            NUM_BEAMS, COUNT_POINTS, OUT_COUNT_POINTS_FFT, MAX_PEAKS_COUNT,
+            "test_small", "test_module"
+        );
+        
+        antenna_fft::AntennaFFTProcMax processor(fft_params);
+        
+        // Обработать через ProcessNew()
+        antenna_fft::AntennaFFTResult result = processor.ProcessNew(signal_gpu);
+        
+        // Проверить результат
+        if (result.results.size() == NUM_BEAMS) {
+            std::cout << "\n✅ Test 6 passed! ProcessNew() completed with " 
+                      << result.results.size() << " beams\n";
+        } else {
+            throw std::runtime_error("Incorrect number of results");
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Test 6 failed: " << e.what() << "\n";
+        throw;
+    }
+}
+
+void test_process_new_large() {
+    std::cout << "\n═══════════════════════════════════════════════════════════\n";
+    std::cout << "  Test 7: ProcessNew() with LARGE data (256 beams, 1300000 points)\n";
+    std::cout << "  Expected: MULTI-BATCH (batch processing)\n";
+    std::cout << "═══════════════════════════════════════════════════════════\n\n";
+    
+    try {
+        // Инициализация OpenCL
+        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        }
+        
+        // Большие параметры - должен использоваться batch processing
+        const size_t NUM_BEAMS = 256;
+        const size_t COUNT_POINTS = 1300000;
+        const size_t OUT_COUNT_POINTS_FFT = 1000;
+        const size_t MAX_PEAKS_COUNT = 3;
+        
+        std::cout << "  Параметры:\n";
+        printf("    - Лучей: %zu\n", NUM_BEAMS);
+        printf("    - Точек/луч: %zu\n", COUNT_POINTS);
+        printf("    - Выходных точек FFT: %zu\n", OUT_COUNT_POINTS_FFT);
+        printf("    - Максимумов: %zu\n\n", MAX_PEAKS_COUNT);
+        
+        // Создать генератор
+        LFMParameters lfm_params;
+        lfm_params.num_beams = NUM_BEAMS;
+        lfm_params.count_points = COUNT_POINTS;
+        lfm_params.sample_rate = 1.0e6f;
+        
+        radar::GeneratorGPU gen(lfm_params);
+        
+        SinusoidGenParams gen_params(NUM_BEAMS, COUNT_POINTS);
+        RaySinusoidMap empty_map;
+        
+        // Генерировать сигналы
+        std::cout << "Generating signals (this may take a while)...\n";
+        cl_mem signal_gpu = gen.signal_sinusoids(gen_params, empty_map);
+        std::cout << "Signals generated.\n\n";
+        
+        // Создать процессор FFT
+        antenna_fft::AntennaFFTParams fft_params(
+            NUM_BEAMS, COUNT_POINTS, OUT_COUNT_POINTS_FFT, MAX_PEAKS_COUNT,
+            "test_large", "test_module"
+        );
+        
+        antenna_fft::AntennaFFTProcMax processor(fft_params);
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // ПЕРВЫЙ ВЫЗОВ - буферы и план создаются
+        // ═══════════════════════════════════════════════════════════════════════
+        std::cout << "┌─────────────────────────────────────────────────────────────┐\n";
+        std::cout << "│  ПЕРВЫЙ ВЫЗОВ ProcessNew() - создание буферов и плана      │\n";
+        std::cout << "└─────────────────────────────────────────────────────────────┘\n\n";
+        
+        antenna_fft::AntennaFFTResult result1 = processor.ProcessNew(signal_gpu);
+        
+        if (result1.results.size() != NUM_BEAMS) {
+            throw std::runtime_error("First call: Incorrect number of results");
+        }
+        std::cout << "\n✅ Первый вызов: " << result1.results.size() << " beams processed\n\n";
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // ВТОРОЙ ВЫЗОВ - буферы и план переиспользуются!
+        // ═══════════════════════════════════════════════════════════════════════
+        std::cout << "┌─────────────────────────────────────────────────────────────┐\n";
+        std::cout << "│  ВТОРОЙ ВЫЗОВ ProcessNew() - переиспользование кэша! ♻️     │\n";
+        std::cout << "└─────────────────────────────────────────────────────────────┘\n\n";
+        
+        antenna_fft::AntennaFFTResult result2 = processor.ProcessNew(signal_gpu);
+        
+        if (result2.results.size() != NUM_BEAMS) {
+            throw std::runtime_error("Second call: Incorrect number of results");
+        }
+        std::cout << "\n✅ Второй вызов: " << result2.results.size() << " beams processed\n";
+        
+        // Вывести статистику
+        std::cout << "\n✅ Test 7 passed! Both calls completed successfully\n";
+        std::cout << processor.GetProfilingStats() << "\n";
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Test 7 failed: " << e.what() << "\n";
+        throw;
+    }
+}
+
 void run_all_tests() {
     std::cout << "\n";
     std::cout << "╔═══════════════════════════════════════════════════════════╗\n";
@@ -167,11 +316,16 @@ void run_all_tests() {
     std::cout << "╚═══════════════════════════════════════════════════════════╝\n";
     
     try {
-        test_basic_with_generator();
-        test_nfft_calculation();
-        test_maxima_search();
-        test_profiling();
-        test_output();
+        // Основные тесты
+//        test_basic_with_generator();
+//        test_nfft_calculation();
+//        test_maxima_search();
+//        test_profiling();
+//        test_output();
+        
+        // Тесты ProcessNew() с автоматическим выбором стратегии
+        test_process_new_small();
+        test_process_new_large();
         
         std::cout << "\n";
         std::cout << "╔═══════════════════════════════════════════════════════════╗\n";

@@ -87,6 +87,18 @@ public:
     AntennaFFTResult Process(const std::vector<std::complex<float>>& input_data);
     
     /**
+     * @brief Новый метод обработки FFT с автоматическим выбором стратегии
+     * 
+     * Автоматически выбирает между:
+     * - Полная обработка (если памяти хватает) - вызывает Process()
+     * - Batch processing (если памяти не хватает) - разбивает на батчи
+     * 
+     * @param input_signal GPU буфер с входными комплексными данными
+     * @return AntennaFFTResult с результатами для всех лучей
+     */
+    AntennaFFTResult ProcessNew(cl_mem input_signal);
+    
+    /**
      * @brief Вывести результаты в консоль (таблица)
      * @param result Результаты обработки
      */
@@ -224,6 +236,55 @@ private:
     double ProfileEvent(cl_event event, const std::string& operation_name);
     
     // ═══════════════════════════════════════════════════════════════
+    // Batch Processing методы (для ProcessNew)
+    // ═══════════════════════════════════════════════════════════════
+    
+    /**
+     * @brief Оценить требуемую память для текущих параметров
+     * @return Размер в байтах
+     */
+    size_t EstimateRequiredMemory() const;
+    
+    /**
+     * @brief Проверить достаточно ли доступной памяти
+     * @param required_memory Требуемая память в байтах
+     * @param threshold Порог использования памяти (0.0-1.0, по умолчанию 0.4 = 40%)
+     * @return true если памяти хватает для полной обработки
+     */
+    bool CheckAvailableMemory(size_t required_memory, double threshold = 0.4) const;
+    
+    /**
+     * @brief Рассчитать размер батча (количество лучей)
+     * @param total_beams Общее количество лучей
+     * @param batch_percent Процент от общего количества (0.0-1.0, по умолчанию 0.2 = 20%)
+     * @return Размер батча (минимум 1 луч)
+     */
+    size_t CalculateBatchSize(size_t total_beams, double batch_percent = 0.2) const;
+    
+    /**
+     * @brief Обработать один батч лучей
+     * @param input_signal Входной буфер (полный, все лучи)
+     * @param start_beam Индекс первого луча в батче
+     * @param num_beams Количество лучей в батче
+     * @param batch_queue Command queue для этого батча
+     * @param completion_event Выходное событие завершения (для синхронизации)
+     * @return Результаты для лучей этого батча
+     */
+    std::vector<FFTResult> ProcessBatch(
+        cl_mem input_signal,
+        size_t start_beam,
+        size_t num_beams,
+        cl_command_queue batch_queue,
+        cl_event* completion_event);
+    
+    /**
+     * @brief Обработать все лучи с использованием batch processing
+     * @param input_signal GPU буфер с входными данными
+     * @return AntennaFFTResult с результатами для всех лучей
+     */
+    AntennaFFTResult ProcessWithBatching(cl_mem input_signal);
+    
+    // ═══════════════════════════════════════════════════════════════
     // Члены класса
     // ═══════════════════════════════════════════════════════════════
     
@@ -274,6 +335,41 @@ private:
         double total_time_ms;
     };
     ProfilingData last_profiling_;
+    
+    // ═══════════════════════════════════════════════════════════════
+    // Batch Processing конфигурация и данные
+    // ═══════════════════════════════════════════════════════════════
+    
+    // Кэшируемые буферы для batch processing (создаются один раз)
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_fft_input_;     // FFT input buffer
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_fft_output_;    // FFT output buffer
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_input_buffer_;  // Input copy buffer
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_complex_;   // Selected complex output
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_magnitude_; // Selected magnitude output
+    size_t batch_buffers_size_;                                  // Текущий размер буферов (num_beams)
+    
+    // Кэшируемый FFT план для batch processing
+    clfftPlanHandle batch_plan_handle_;                         // Handle плана FFT для батчей
+    size_t batch_plan_beams_;                                   // Для скольких лучей создан план
+    
+    // Конфигурация batch processing
+    struct BatchConfig {
+        double memory_usage_limit = 0.4;    // 40% от доступной памяти
+        double batch_size_ratio = 0.2;      // 20% лучей на батч
+        size_t min_beams_for_batch = 10;    // Минимум лучей для batch режима
+    };
+    BatchConfig batch_config_;
+    
+    // Профилирование для batch режима
+    struct BatchProfilingData {
+        size_t batch_index;
+        size_t start_beam;
+        size_t num_beams;
+        double gpu_time_ms;
+    };
+    std::vector<BatchProfilingData> batch_profiling_;
+    double batch_total_cpu_time_ms_;        // Общее CPU время для всех батчей
+    bool last_used_batch_mode_;             // Был ли использован batch режим в последнем вызове
     
     // Кэш для планов FFT (ключ: hash параметров)
     struct PlanCacheKey {

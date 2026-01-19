@@ -50,7 +50,13 @@ AntennaFFTProcMax::AntennaFFTProcMax(const AntennaFFTParams& params)
        post_callback_userdata_(nullptr),
        reduction_kernel_(nullptr),
        padding_kernel_(nullptr),
-       post_kernel_(nullptr) {
+       post_kernel_(nullptr),
+       batch_config_(),
+       batch_total_cpu_time_ms_(0.0),
+       last_used_batch_mode_(false),
+       batch_buffers_size_(0),
+       batch_plan_handle_(0),
+       batch_plan_beams_(0) {
     
     // Валидация параметров
     if (!params_.IsValid()) {
@@ -89,6 +95,11 @@ AntennaFFTProcMax::AntennaFFTProcMax(const AntennaFFTParams& params)
 
 AntennaFFTProcMax::~AntennaFFTProcMax() {
     ReleaseFFTPlan();
+
+    // Освободить batch FFT план
+    if (batch_plan_handle_) {
+        clfftDestroyPlan(&batch_plan_handle_);
+    }
 
     if (pre_callback_userdata_) {
         clReleaseMemObject(pre_callback_userdata_);
@@ -129,7 +140,11 @@ AntennaFFTProcMax::AntennaFFTProcMax(AntennaFFTProcMax&& other) noexcept
        reduction_kernel_(other.reduction_kernel_),
        padding_kernel_(other.padding_kernel_),
        post_kernel_(other.post_kernel_),
-       last_profiling_(other.last_profiling_) {
+       last_profiling_(other.last_profiling_),
+       batch_config_(other.batch_config_),
+       batch_profiling_(std::move(other.batch_profiling_)),
+       batch_total_cpu_time_ms_(other.batch_total_cpu_time_ms_),
+       last_used_batch_mode_(other.last_used_batch_mode_) {
 
     other.plan_handle_ = 0;
     other.plan_created_ = false;
@@ -172,6 +187,10 @@ AntennaFFTProcMax& AntennaFFTProcMax::operator=(AntennaFFTProcMax&& other) noexc
         padding_kernel_ = other.padding_kernel_;
         post_kernel_ = other.post_kernel_;
         last_profiling_ = other.last_profiling_;
+        batch_config_ = other.batch_config_;
+        batch_profiling_ = std::move(other.batch_profiling_);
+        batch_total_cpu_time_ms_ = other.batch_total_cpu_time_ms_;
+        last_used_batch_mode_ = other.last_used_batch_mode_;
 
         other.plan_handle_ = 0;
         other.plan_created_ = false;
@@ -211,6 +230,509 @@ size_t AntennaFFTProcMax::NextPowerOf2(size_t n) const {
         power <<= 1;
     }
     return power;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Batch Processing: Оценка памяти и выбор стратегии
+// ════════════════════════════════════════════════════════════════════════════
+
+size_t AntennaFFTProcMax::EstimateRequiredMemory() const {
+    // Входные данные: beam_count * count_points * sizeof(complex<float>)
+    size_t input_size = params_.beam_count * params_.count_points * sizeof(std::complex<float>);
+    
+    // FFT буферы: beam_count * nFFT * sizeof(complex<float>) * 2 (input + output)
+    size_t fft_buffers = params_.beam_count * nFFT_ * sizeof(std::complex<float>) * 2;
+    
+    // Pre-callback userdata: 32 bytes (params) + input_size
+    size_t pre_userdata = 32 + input_size;
+    
+    // Post-processing буферы: beam_count * out_count_points_fft * (8 + 4) bytes
+    size_t post_buffers = params_.beam_count * params_.out_count_points_fft * 
+                         (sizeof(std::complex<float>) + sizeof(float));
+    
+    // Временные буферы clFFT (оценка ~nFFT * 8 bytes)
+    size_t clfft_temp = nFFT_ * sizeof(std::complex<float>);
+    
+    return input_size + fft_buffers + pre_userdata + post_buffers + clfft_temp;
+}
+
+bool AntennaFFTProcMax::CheckAvailableMemory(size_t required_memory, double threshold) const {
+    // Получить размер глобальной памяти GPU
+    size_t global_memory = gpu::OpenCLCore::GetInstance().GetGlobalMemorySize();
+    
+    // Рассчитать доступную память с учётом порога
+    size_t available_memory = static_cast<size_t>(global_memory * threshold);
+    
+    std::cout << "  ┌─────────────────────────────────────────────────────────────┐\n";
+    std::cout << "  │  MEMORY CHECK                                               │\n";
+    std::cout << "  └─────────────────────────────────────────────────────────────┘\n";
+    printf("  │  GPU Global Memory      │  %10zu MB  │\n", global_memory / (1024 * 1024));
+    printf("  │  Threshold (%.0f%%)        │  %10zu MB  │\n", threshold * 100, available_memory / (1024 * 1024));
+    printf("  │  Required Memory         │  %10zu MB  │\n", required_memory / (1024 * 1024));
+    printf("  │  Status                  │  %s  │\n", 
+           required_memory <= available_memory ? "    OK ✅    " : "  BATCH ⚠️  ");
+    std::cout << "\n";
+    
+    return required_memory <= available_memory;
+}
+
+size_t AntennaFFTProcMax::CalculateBatchSize(size_t total_beams, double batch_percent) const {
+    size_t batch_size = static_cast<size_t>(total_beams * batch_percent);
+    
+    // Минимум 1 луч
+    if (batch_size < 1) batch_size = 1;
+    
+    // Не больше общего количества лучей
+    if (batch_size > total_beams) batch_size = total_beams;
+    
+    return batch_size;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ProcessNew: Автоматический выбор стратегии обработки
+// ════════════════════════════════════════════════════════════════════════════
+
+AntennaFFTResult AntennaFFTProcMax::ProcessNew(cl_mem input_signal) {
+    std::cout << "\n════════════════════════════════════════════════════════════════\n";
+    std::cout << "  ProcessNew: Автоматический выбор стратегии\n";
+    std::cout << "════════════════════════════════════════════════════════════════\n\n";
+    
+    // 1. Оценить требуемую память
+    size_t required_memory = EstimateRequiredMemory();
+    
+    // 2. Проверить доступную память
+    bool memory_ok = CheckAvailableMemory(required_memory, batch_config_.memory_usage_limit);
+    
+    // 3. Выбрать стратегию
+    if (memory_ok) {
+        std::cout << "  → Стратегия: SINGLE BATCH (полная обработка)\n";
+        std::cout << "  → Вызываем Process()\n\n";
+        last_used_batch_mode_ = false;
+        return Process(input_signal);
+    } else {
+        std::cout << "  → Стратегия: MULTI-BATCH (batch processing)\n";
+        std::cout << "  → Вызываем ProcessWithBatching()\n\n";
+        last_used_batch_mode_ = true;
+        return ProcessWithBatching(input_signal);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ProcessWithBatching: Обработка с разбиением на батчи
+// ════════════════════════════════════════════════════════════════════════════
+
+AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
+    auto cpu_start = std::chrono::high_resolution_clock::now();
+    
+    // Рассчитать размер батча
+    size_t batch_size = CalculateBatchSize(params_.beam_count, batch_config_.batch_size_ratio);
+    
+    // Рассчитать количество батчей
+    size_t num_batches = (params_.beam_count + batch_size - 1) / batch_size;
+    
+    // Проверить: если в последнем батче остаётся 1-2 луча, добавить их в предыдущий
+    size_t last_batch_beams = params_.beam_count - (num_batches - 1) * batch_size;
+    if (num_batches > 1 && last_batch_beams <= 2) {
+        num_batches--;  // Уменьшить количество батчей
+        std::cout << "  ⚡ Оптимизация: " << last_batch_beams << " луч(а) добавлены в последний батч\n\n";
+    }
+    
+    std::cout << "  ┌─────────────────────────────────────────────────────────────┐\n";
+    std::cout << "  │  BATCH PROCESSING                                           │\n";
+    std::cout << "  └─────────────────────────────────────────────────────────────┘\n";
+    printf("  │  Total beams             │  %10zu  │\n", params_.beam_count);
+    printf("  │  Batch size (base)       │  %10zu  │\n", batch_size);
+    printf("  │  Number of batches       │  %10zu  │\n", num_batches);
+    printf("  │  Queue pool size         │  %10zu  │\n", gpu::CommandQueuePool::GetPoolSize());
+    std::cout << "\n";
+    
+    // Очистить профилирование
+    batch_profiling_.clear();
+    batch_profiling_.reserve(num_batches);
+    
+    // Собрать все результаты
+    std::vector<FFTResult> all_results;
+    all_results.reserve(params_.beam_count);
+    
+    // Вектор для событий завершения батчей
+    std::vector<cl_event> completion_events;
+    completion_events.reserve(num_batches);
+    
+    // Структура для хранения информации о батчах (для профилирования)
+    struct BatchInfo {
+        size_t start_beam;
+        size_t num_beams;
+    };
+    std::vector<BatchInfo> batch_infos;
+    batch_infos.reserve(num_batches);
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // СОЗДАТЬ БУФЕРЫ ОДИН РАЗ для максимального размера батча
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // Найти максимальный размер батча (для последнего может быть больше)
+    size_t max_batch_beams = (num_batches == 1) ? params_.beam_count : 
+                            std::max(batch_size, params_.beam_count - (num_batches - 1) * batch_size);
+    
+    // Создать буферы если их нет или размер изменился
+    if (!batch_fft_input_ || batch_buffers_size_ < max_batch_beams) {
+        auto t_buf_start = std::chrono::high_resolution_clock::now();
+        
+        size_t fft_buf_size = max_batch_beams * nFFT_;
+        // БЕЗ batch_input_buffer_ - читаем напрямую из input_signal!
+        size_t output_buf_size = max_batch_beams * params_.out_count_points_fft;
+        size_t mag_buf_elements = (output_buf_size * sizeof(float) + sizeof(std::complex<float>) - 1) / sizeof(std::complex<float>);
+        
+        batch_fft_input_ = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
+        batch_fft_output_ = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
+        // batch_input_buffer_ НЕ НУЖЕН - работаем напрямую с input_signal!
+        batch_sel_complex_ = engine_->CreateBuffer(output_buf_size, gpu::MemoryType::GPU_READ_WRITE);
+        batch_sel_magnitude_ = engine_->CreateBuffer(mag_buf_elements, gpu::MemoryType::GPU_READ_WRITE);
+        batch_buffers_size_ = max_batch_beams;
+        
+        auto t_buf_end = std::chrono::high_resolution_clock::now();
+        double buf_ms = std::chrono::duration<double, std::milli>(t_buf_end - t_buf_start).count();
+        printf("  ⏱️  Created batch buffers (max %zu beams): %.2f ms\n\n", max_batch_beams, buf_ms);
+    } else {
+        std::cout << "  ♻️  Reusing cached batch buffers\n\n";
+    }
+    
+    // Создать FFT план для батчей если нужно
+    if (batch_plan_handle_ == 0 || batch_plan_beams_ != max_batch_beams) {
+        if (batch_plan_handle_) {
+            clfftDestroyPlan(&batch_plan_handle_);
+        }
+        
+        auto t_plan_start = std::chrono::high_resolution_clock::now();
+        
+        size_t clLengths[1] = {nFFT_};
+        clfftStatus status = clfftCreateDefaultPlan(&batch_plan_handle_, context_, CLFFT_1D, clLengths);
+        if (status != CLFFT_SUCCESS) {
+            throw std::runtime_error("ProcessWithBatching: clfftCreateDefaultPlan failed");
+        }
+        
+        clfftSetPlanPrecision(batch_plan_handle_, CLFFT_SINGLE);
+        clfftSetLayout(batch_plan_handle_, CLFFT_COMPLEX_INTERLEAVED, CLFFT_COMPLEX_INTERLEAVED);
+        clfftSetResultLocation(batch_plan_handle_, CLFFT_OUTOFPLACE);
+        clfftSetPlanBatchSize(batch_plan_handle_, max_batch_beams);
+        
+        size_t strides[1] = {1};
+        clfftSetPlanInStride(batch_plan_handle_, CLFFT_1D, strides);
+        clfftSetPlanOutStride(batch_plan_handle_, CLFFT_1D, strides);
+        clfftSetPlanDistance(batch_plan_handle_, nFFT_, nFFT_);
+        
+        status = clfftBakePlan(batch_plan_handle_, 1, &queue_, nullptr, nullptr);
+        if (status != CLFFT_SUCCESS) {
+            clfftDestroyPlan(&batch_plan_handle_);
+            batch_plan_handle_ = 0;
+            throw std::runtime_error("ProcessWithBatching: clfftBakePlan failed");
+        }
+        
+        batch_plan_beams_ = max_batch_beams;
+        
+        auto t_plan_end = std::chrono::high_resolution_clock::now();
+        double plan_ms = std::chrono::duration<double, std::milli>(t_plan_end - t_plan_start).count();
+        printf("  ⏱️  Created FFT plan (nFFT=%zu, batch=%zu): %.2f ms\n\n", nFFT_, max_batch_beams, plan_ms);
+    } else {
+        std::cout << "  ♻️  Reusing cached FFT plan\n\n";
+    }
+    
+    // Убедиться что kernels созданы
+    if (!post_kernel_) CreatePostKernel();
+    if (!padding_kernel_) CreatePaddingKernel();
+    
+    // Обработать каждый батч
+    size_t processed_beams = 0;
+    for (size_t batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
+        size_t start_beam = processed_beams;
+        size_t beams_in_batch;
+        
+        if (batch_idx == num_batches - 1) {
+            // Последний батч берёт все оставшиеся лучи
+            beams_in_batch = params_.beam_count - processed_beams;
+        } else {
+            beams_in_batch = batch_size;
+        }
+        
+        // Получить очередь из пула
+        cl_command_queue batch_queue = gpu::CommandQueuePool::GetNextQueue();
+        
+        std::cout << "  [Batch " << batch_idx << "] Processing beams " 
+                  << start_beam << "-" << (start_beam + beams_in_batch - 1)
+                  << " (" << beams_in_batch << " beams, queue " 
+                  << gpu::CommandQueuePool::GetCurrentQueueIndex() << ")\n";
+        
+        // Сохранить информацию о батче
+        batch_infos.push_back({start_beam, beams_in_batch});
+        
+        // Событие завершения
+        cl_event completion_event = nullptr;
+        
+        // Обработать батч
+        auto batch_results = ProcessBatch(input_signal, start_beam, beams_in_batch, 
+                                          batch_queue, &completion_event);
+        
+        // Сохранить результаты
+        for (auto& result : batch_results) {
+            all_results.push_back(std::move(result));
+        }
+        
+        // Сохранить событие
+        if (completion_event) {
+            completion_events.push_back(completion_event);
+        }
+        
+        processed_beams += beams_in_batch;
+    }
+    
+    // Ждать завершения всех батчей
+    if (!completion_events.empty()) {
+        std::cout << "\n  Waiting for all batches to complete...\n";
+        clWaitForEvents(static_cast<cl_uint>(completion_events.size()), completion_events.data());
+        
+        // Профилировать каждый батч
+        for (size_t i = 0; i < completion_events.size(); ++i) {
+            BatchProfilingData prof;
+            prof.batch_index = i;
+            prof.start_beam = batch_infos[i].start_beam;
+            prof.num_beams = batch_infos[i].num_beams;
+            prof.gpu_time_ms = ProfileEvent(completion_events[i], "Batch " + std::to_string(i));
+            batch_profiling_.push_back(prof);
+        }
+        
+        // Освободить события
+        for (auto& event : completion_events) {
+            clReleaseEvent(event);
+        }
+    }
+    
+    auto cpu_end = std::chrono::high_resolution_clock::now();
+    batch_total_cpu_time_ms_ = std::chrono::duration<double, std::milli>(cpu_end - cpu_start).count();
+    
+    // Собрать результат
+    AntennaFFTResult result(params_.beam_count, nFFT_, params_.task_id, params_.module_name);
+    result.results = std::move(all_results);
+    
+    // Вывести профилирование
+    std::cout << "\n  ┌─────────────────────────────────────────────────────────────┐\n";
+    std::cout << "  │  BATCH PROFILING                                            │\n";
+    std::cout << "  └─────────────────────────────────────────────────────────────┘\n";
+    
+    double total_gpu_time = 0.0;
+    for (const auto& prof : batch_profiling_) {
+        printf("  │  Batch %zu (%3zu beams: %3zu-%3zu) │  %10.4f ms  │\n", 
+               prof.batch_index, prof.num_beams, prof.start_beam, 
+               prof.start_beam + prof.num_beams - 1, prof.gpu_time_ms);
+        total_gpu_time += prof.gpu_time_ms;
+    }
+    
+    std::cout << "  ├─────────────────────────────────────────────────────────────┤\n";
+    printf("  │  Total GPU time          │  %10.4f ms  │\n", total_gpu_time);
+    printf("  │  Total CPU time          │  %10.4f ms  │\n", batch_total_cpu_time_ms_);
+    
+    // Дополнительная статистика
+    double avg_batch_time = batch_profiling_.empty() ? 0.0 : total_gpu_time / batch_profiling_.size();
+    double beams_per_sec = batch_total_cpu_time_ms_ > 0 ? 
+                           (params_.beam_count * 1000.0 / batch_total_cpu_time_ms_) : 0.0;
+    
+    std::cout << "  ├─────────────────────────────────────────────────────────────┤\n";
+    printf("  │  Avg GPU time per batch  │  %10.4f ms  │\n", avg_batch_time);
+    printf("  │  Total time              │  %10.2f sec │\n", batch_total_cpu_time_ms_ / 1000.0);
+    printf("  │  Processing speed        │  %10.2f beams/sec │\n", beams_per_sec);
+    std::cout << "  └─────────────────────────────────────────────────────────────┘\n\n";
+    
+    // Обновить профилирование для совместимости
+    last_profiling_.total_time_ms = batch_total_cpu_time_ms_;
+    last_profiling_.fft_time_ms = total_gpu_time;
+    
+    std::cout << "  ✅ Batch processing completed! (" << params_.beam_count << " beams in " 
+              << std::fixed << std::setprecision(2) << (batch_total_cpu_time_ms_ / 1000.0) << " sec)\n\n";
+    
+    return result;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ProcessBatch: Обработка одного батча лучей
+// ════════════════════════════════════════════════════════════════════════════
+
+std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
+    cl_mem input_signal,
+    size_t start_beam,
+    size_t num_beams,
+    cl_command_queue batch_queue,
+    cl_event* completion_event) {
+    
+    std::vector<FFTResult> results;
+    results.reserve(num_beams);
+    
+    cl_int err;
+    
+    // Размер выходных данных
+    size_t batch_output_size = num_beams * params_.out_count_points_fft;
+    
+    // ИСПОЛЬЗУЕМ КЭШИРОВАННЫЕ БУФЕРЫ (созданы в ProcessWithBatching)
+    cl_mem fft_in = batch_fft_input_->Get();
+    cl_mem fft_out = batch_fft_output_->Get();
+    cl_mem sel_complex = batch_sel_complex_->Get();
+    cl_mem sel_magnitude = batch_sel_magnitude_->Get();
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 1: Padding kernel (БЕЗ КОПИРОВАНИЯ - работаем напрямую с input_signal!)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    cl_uint batch_beam_count = static_cast<cl_uint>(num_beams);
+    cl_uint count_points = static_cast<cl_uint>(params_.count_points);
+    cl_uint nfft = static_cast<cl_uint>(nFFT_);
+    cl_uint beam_offset = static_cast<cl_uint>(start_beam);  // Смещение в лучах
+    
+    // Передаём исходный буфер и offset - БЕЗ КОПИРОВАНИЯ!
+    err = clSetKernelArg(padding_kernel_, 0, sizeof(cl_mem), &input_signal);
+    err |= clSetKernelArg(padding_kernel_, 1, sizeof(cl_mem), &fft_in);
+    err |= clSetKernelArg(padding_kernel_, 2, sizeof(cl_uint), &batch_beam_count);
+    err |= clSetKernelArg(padding_kernel_, 3, sizeof(cl_uint), &count_points);
+    err |= clSetKernelArg(padding_kernel_, 4, sizeof(cl_uint), &nfft);
+    err |= clSetKernelArg(padding_kernel_, 5, sizeof(cl_uint), &beam_offset);  // НОВЫЙ параметр!
+    
+    if (err != CL_SUCCESS) {
+        throw std::runtime_error("ProcessBatch: set padding kernel args failed: " + std::to_string(err));
+    }
+    
+    size_t padding_global_size = num_beams * nFFT_;
+    cl_event event_padding = nullptr;
+    err = clEnqueueNDRangeKernel(batch_queue, padding_kernel_, 1, nullptr, 
+                                 &padding_global_size, nullptr, 0, nullptr, &event_padding);
+    if (err != CL_SUCCESS) {
+        throw std::runtime_error("ProcessBatch: padding kernel failed: " + std::to_string(err));
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 3: FFT (используем кэшированный план)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    cl_event event_fft = nullptr;
+    
+    clfftStatus status = clfftEnqueueTransform(
+        batch_plan_handle_,
+        CLFFT_FORWARD,
+        1,
+        &batch_queue,
+        1, &event_padding,
+        &event_fft,
+        &fft_in,
+        &fft_out,
+        nullptr
+    );
+    
+    if (status != CLFFT_SUCCESS) {
+        clReleaseEvent(event_padding);
+        throw std::runtime_error("ProcessBatch: clfftEnqueueTransform failed: " + std::to_string(status));
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 4: Post-kernel (magnitude + select)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    cl_uint search_range = static_cast<cl_uint>(params_.out_count_points_fft);
+    
+    err = clSetKernelArg(post_kernel_, 0, sizeof(cl_mem), &fft_out);
+    err |= clSetKernelArg(post_kernel_, 1, sizeof(cl_mem), &sel_complex);
+    err |= clSetKernelArg(post_kernel_, 2, sizeof(cl_mem), &sel_magnitude);
+    err |= clSetKernelArg(post_kernel_, 3, sizeof(cl_uint), &batch_beam_count);
+    err |= clSetKernelArg(post_kernel_, 4, sizeof(cl_uint), &nfft);
+    err |= clSetKernelArg(post_kernel_, 5, sizeof(cl_uint), &search_range);
+    
+    if (err != CL_SUCCESS) {
+        clReleaseEvent(event_padding);
+        clReleaseEvent(event_fft);
+        throw std::runtime_error("ProcessBatch: set post kernel args failed: " + std::to_string(err));
+    }
+    
+    size_t post_global_size = batch_output_size;
+    cl_event event_post = nullptr;
+    
+    err = clEnqueueNDRangeKernel(batch_queue, post_kernel_, 1, nullptr, 
+                                 &post_global_size, nullptr, 
+                                 1, &event_fft,
+                                 &event_post);
+    
+    if (err != CL_SUCCESS) {
+        clReleaseEvent(event_padding);
+        clReleaseEvent(event_fft);
+        throw std::runtime_error("ProcessBatch: post kernel failed: " + std::to_string(err));
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 5: Читаем результаты и находим максимумы
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    clWaitForEvents(1, &event_post);
+    
+    // Читаем magnitude и complex
+    std::vector<float> magnitudes(batch_output_size);
+    std::vector<std::complex<float>> complexes(batch_output_size);
+    
+    err = clEnqueueReadBuffer(batch_queue, sel_magnitude, CL_TRUE, 0,
+                              batch_output_size * sizeof(float), magnitudes.data(),
+                              0, nullptr, nullptr);
+    
+    err |= clEnqueueReadBuffer(batch_queue, sel_complex, CL_TRUE, 0,
+                               batch_output_size * sizeof(std::complex<float>), complexes.data(),
+                               0, nullptr, nullptr);
+    
+    if (err != CL_SUCCESS) {
+        std::cerr << "ProcessBatch: read buffers failed: " << err << "\n";
+    }
+    
+    // Найти максимумы для каждого луча в батче
+    for (size_t beam = 0; beam < num_beams; ++beam) {
+        FFTResult beam_result(params_.out_count_points_fft, params_.task_id, params_.module_name);
+        
+        // Найти топ-N максимумов для этого луча
+        std::vector<std::pair<float, size_t>> mag_idx;
+        mag_idx.reserve(params_.out_count_points_fft);
+        
+        for (size_t i = 0; i < params_.out_count_points_fft; ++i) {
+            size_t idx = beam * params_.out_count_points_fft + i;
+            mag_idx.push_back({magnitudes[idx], i});
+        }
+        
+        // Сортировать по убыванию magnitude
+        std::partial_sort(mag_idx.begin(), 
+                         mag_idx.begin() + std::min(params_.max_peaks_count, mag_idx.size()),
+                         mag_idx.end(),
+                         [](const auto& a, const auto& b) { return a.first > b.first; });
+        
+        // Взять топ-N
+        for (size_t i = 0; i < std::min(params_.max_peaks_count, mag_idx.size()); ++i) {
+            FFTMaxResult mv;
+            mv.index_point = mag_idx[i].second;
+            mv.amplitude = mag_idx[i].first;
+            
+            size_t cplx_idx = beam * params_.out_count_points_fft + mag_idx[i].second;
+            float phase_rad = std::atan2(complexes[cplx_idx].imag(), complexes[cplx_idx].real());
+            mv.phase = phase_rad * 180.0f / static_cast<float>(M_PI);
+            
+            beam_result.max_values.push_back(mv);
+        }
+        
+        results.push_back(std::move(beam_result));
+    }
+    
+    // Установить completion_event для этого батча
+    if (completion_event) {
+        *completion_event = event_post;
+        // НЕ освобождаем event_post - он будет освобождён вызывающим кодом
+    } else {
+        clReleaseEvent(event_post);
+    }
+    
+    // Освободить промежуточные события
+    clReleaseEvent(event_padding);
+    clReleaseEvent(event_fft);
+    
+    // FFT план НЕ освобождаем - он кэшируется для переиспользования!
+    
+    return results;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -810,25 +1332,30 @@ void AntennaFFTProcMax::CreateFFTPlanWithPreCallbackOnly() {
 
 void AntennaFFTProcMax::CreatePaddingKernel() {
     // Kernel для padding данных: count_points → nFFT
+    // С поддержкой beam_offset для batch processing БЕЗ КОПИРОВАНИЯ!
     const char* kernel_source = R"CL(
         __kernel void padding_kernel(
-            __global const float2* input,    // Входные данные: beam_count * count_points
-            __global float2* output,         // Выходные данные: beam_count * nFFT  
-            uint beam_count,
-            uint count_points,
-            uint nFFT
+            __global const float2* input,    // Входные данные: ПОЛНЫЙ буфер (все лучи)
+            __global float2* output,         // Выходные данные: batch_beam_count * nFFT  
+            uint batch_beam_count,           // Количество лучей в батче
+            uint count_points,               // Точек на луч
+            uint nFFT,                       // Размер FFT
+            uint beam_offset                 // Смещение в лучах (для batch processing)
         ) {
             uint gid = get_global_id(0);
             
-            // gid = beam_idx * nFFT + pos_in_fft
-            uint beam_idx = gid / nFFT;
+            // gid = local_beam_idx * nFFT + pos_in_fft
+            uint local_beam_idx = gid / nFFT;
             uint pos_in_fft = gid % nFFT;
             
-            if (beam_idx >= beam_count) return;
+            if (local_beam_idx >= batch_beam_count) return;
+            
+            // Глобальный индекс луча = local + offset
+            uint global_beam_idx = local_beam_idx + beam_offset;
             
             if (pos_in_fft < count_points) {
-                // Копируем данные
-                uint src_idx = beam_idx * count_points + pos_in_fft;
+                // Читаем из глобального индекса, пишем в локальный
+                uint src_idx = global_beam_idx * count_points + pos_in_fft;
                 output[gid] = input[src_idx];
             } else {
                 // Zero-padding

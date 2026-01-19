@@ -137,6 +137,14 @@ size_t CommandQueuePool::GetPoolSize() {
     return (initialized_) ? queues_.size() : 0;
 }
 
+// Get current queue index
+size_t CommandQueuePool::GetCurrentQueueIndex() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!initialized_ || queues_.empty()) return 0;
+    // Return the last used index (current_index_ points to next)
+    return (current_index_ == 0) ? (queues_.size() - 1) : (current_index_ - 1);
+}
+
 // Get statistics
 std::string CommandQueuePool::GetStatistics() {
     std::lock_guard<std::mutex> lock(mutex_);

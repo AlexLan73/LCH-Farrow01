@@ -1,6 +1,6 @@
 # AntennaFFTProcMax Results
 
-**Generated:** 2026-01-19 16:58:23
+**Generated:** 2026-01-19 17:57:54
 
 **Task ID:** test_task_1
 **Module:** test_module
@@ -9,11 +9,11 @@
 
 ## Profiling (GPU events)
 
-Upload Time:        0.363 ms
+Upload Time:        0.399 ms
 FFT Time:           0.707 ms
 Post-Callback Time: 0.004 ms
 Reduction Time:     0.000 ms
-Total Time:         1.073 ms
+Total Time:         1.110 ms
 
 ## Results by Beam
 
