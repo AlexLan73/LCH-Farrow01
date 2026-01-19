@@ -19,14 +19,31 @@ void test_basic_with_generator() {
             gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
         }
         
-        // Параметры генератора: 5 лучей, 1000 точек
-        SinusoidGenParams gen_params(5, 1000);
-        RaySinusoidMap empty_map; // Пустой map - дефолтные параметры
+        // ═══════════════════════════════════════════════════════════════════
+        // ПАРАМЕТРЫ ТЕСТА
+        // ═══════════════════════════════════════════════════════════════════
+        const size_t NUM_BEAMS = 56;
+        const size_t COUNT_POINTS = 130000;
+        const size_t OUT_COUNT_POINTS_FFT = 100;
+        const size_t MAX_PEAKS_COUNT = 3;
+        
+        std::cout << "  ┌─────────────────────────────────────────────────────────────┐\n";
+        std::cout << "  │  ПАРАМЕТРЫ ТЕСТА                                            │\n";
+        std::cout << "  └─────────────────────────────────────────────────────────────┘\n\n";
+        printf("  │  num_beams (лучей)           │  %10zu  │\n", NUM_BEAMS);
+        printf("  │  count_points (точек/луч)    │  %10zu  │\n", COUNT_POINTS);
+        printf("  │  out_count_points_fft        │  %10zu  │\n", OUT_COUNT_POINTS_FFT);
+        printf("  │  max_peaks_count             │  %10zu  │\n", MAX_PEAKS_COUNT);
+        std::cout << "\n";
+        
+        // Параметры генератора
+        SinusoidGenParams gen_params(NUM_BEAMS, COUNT_POINTS);
+        RaySinusoidMap empty_map;
         
         // Создать генератор
         LFMParameters lfm_params;
-        lfm_params.num_beams = 5;
-        lfm_params.count_points = 1000;
+        lfm_params.num_beams = NUM_BEAMS;
+        lfm_params.count_points = COUNT_POINTS;
         lfm_params.sample_rate = 1.0e6f;
         
         radar::GeneratorGPU gen(lfm_params);
@@ -38,10 +55,10 @@ void test_basic_with_generator() {
         
         // Параметры для FFT обработки
         antenna_fft::AntennaFFTParams fft_params(
-            5,      // beam_count
-            1000,   // count_points
-            512,    // out_count_points_fft
-            3,      // max_peaks_count
+            NUM_BEAMS,
+            COUNT_POINTS,
+            OUT_COUNT_POINTS_FFT,
+            MAX_PEAKS_COUNT,
             "test_task_1",
             "test_module"
         );
@@ -49,7 +66,23 @@ void test_basic_with_generator() {
         // Создать процессор FFT
         antenna_fft::AntennaFFTProcMax processor(fft_params);
         
-        std::cout << "nFFT calculated: " << processor.GetNFFT() << "\n\n";
+        size_t nFFT = processor.GetNFFT();
+        size_t total_input_points = NUM_BEAMS * COUNT_POINTS;
+        size_t total_fft_points = NUM_BEAMS * nFFT;
+        size_t input_size_mb = total_input_points * sizeof(std::complex<float>) / (1024 * 1024);
+        size_t fft_size_mb = total_fft_points * sizeof(std::complex<float>) / (1024 * 1024);
+        
+        std::cout << "  ┌─────────────────────────────────────────────────────────────┐\n";
+        std::cout << "  │  FFT РАЗМЕРЫ                                                │\n";
+        std::cout << "  └─────────────────────────────────────────────────────────────┘\n\n";
+        printf("  │  nFFT (размер FFT/луч)       │  %10zu  │ (ближайшая степень 2 × 2)\n", nFFT);
+        printf("  │  Входных точек (всего)       │  %10zu  │ (%zu лучей × %zu точек)\n", 
+               total_input_points, NUM_BEAMS, COUNT_POINTS);
+        printf("  │  FFT точек (всего)           │  %10zu  │ (%zu лучей × %zu nFFT)\n", 
+               total_fft_points, NUM_BEAMS, nFFT);
+        printf("  │  Входные данные              │  %10zu MB │\n", input_size_mb);
+        printf("  │  FFT буферы                  │  %10zu MB │\n", fft_size_mb);
+        std::cout << "\n";
         
         // Обработать сигналы
         std::cout << "Processing FFT...\n";

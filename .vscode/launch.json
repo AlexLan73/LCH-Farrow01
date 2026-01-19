@@ -2,98 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "🎯 Interactive Menu",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ],
-            "preLaunchTask": "build (Linux)",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "📋 Show SVM Capabilities",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
-            "args": ["--svm"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "preLaunchTask": "build (Linux)",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "🧪 Hybrid Buffer Tests",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
-            "args": ["--hybrid"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "preLaunchTask": "build (Linux)",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "📊 Hybrid Buffer Benchmark",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
-            "args": ["--benchmark"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "preLaunchTask": "build (Linux)",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "📡 Antenna FFT Tests",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
-            "args": ["--antenna"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "preLaunchTask": "build (Linux)",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "🚀 ALL Tests",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
-            "args": ["--all"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "preLaunchTask": "build (Linux)",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "🔍 Debug LCH-Farrow1 (detailed)",
+            "name": "Debug LCH-Farrow1 (Linux)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/LCH-Farrow1",
@@ -113,39 +22,9 @@
                     "description": "Set Disassembly Flavor to Intel",
                     "text": "-gdb-set disassembly-flavor intel",
                     "ignoreFailures": true
-                },
-                {
-                    "description": "Show source code in disassembly",
-                    "text": "-gdb-set disassemble-next-line on",
-                    "ignoreFailures": true
                 }
             ],
             "preLaunchTask": "build (Linux)",
-            "miDebuggerPath": "/usr/bin/gdb",
-            "logging": {
-                "moduleLoad": false,
-                "trace": false,
-                "engineLogging": false,
-                "programOutput": true,
-                "exceptions": true
-            },
-            "justMyCode": false,
-            "showDisplayString": true
-        },
-        {
-            "name": "Debug LCH-Farrow1 (Linux, Attach to Process)",
-            "type": "cppdbg",
-            "request": "attach",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
-            "processId": "${command:pickProcess}",
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ],
             "miDebuggerPath": "/usr/bin/gdb"
         }
     ]

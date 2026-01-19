@@ -1,52 +1,1300 @@
 {
   "task_id": "test_task_1",
   "module_name": "test_module",
-  "total_beams": 5,
-  "nFFT": 2048,
+  "total_beams": 56,
+  "nFFT": 262144,
   "profiling_ms": {
-    "upload": 0.000,
-    "fft": 0.000,
-    "post_callback": 0.000,
+    "upload": 0.363,
+    "fft": 0.707,
+    "post_callback": 0.004,
     "reduction": 0.000,
-    "total": 0.000
+    "total": 1.073
   },
   "results": [
     {
       "beam_index": 0,
-      "v_fft": 512,
+      "v_fft": 100,
       "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
       ],
       "fft_complex": [
       ]
     },
     {
       "beam_index": 1,
-      "v_fft": 512,
+      "v_fft": 100,
       "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
       ],
       "fft_complex": [
       ]
     },
     {
       "beam_index": 2,
-      "v_fft": 512,
+      "v_fft": 100,
       "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
       ],
       "fft_complex": [
       ]
     },
     {
       "beam_index": 3,
-      "v_fft": 512,
+      "v_fft": 100,
       "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
       ],
       "fft_complex": [
       ]
     },
     {
       "beam_index": 4,
-      "v_fft": 512,
+      "v_fft": 100,
       "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 5,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 6,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 7,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 8,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 9,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 10,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 11,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 12,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 13,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 14,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 15,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 16,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 17,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 18,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 19,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 20,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 21,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 22,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 23,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 24,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 25,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 26,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 27,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 28,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 29,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 30,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 31,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 32,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 33,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 34,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 35,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 36,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 37,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 38,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 39,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 40,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 41,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 42,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 43,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 44,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 45,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 46,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 47,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 48,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 49,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 50,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 51,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 52,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 53,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 54,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
+      ],
+      "fft_complex": [
+      ]
+    },
+    {
+      "beam_index": 55,
+      "v_fft": 100,
+      "max_values": [
+        {
+          "index_point": 4,
+          "amplitude": 129942.781250,
+          "phase": 2.94
+        },
+        {
+          "index_point": 5,
+          "amplitude": 86111.296875,
+          "phase": -86.32
+        },
+        {
+          "index_point": 3,
+          "amplitude": 80718.570312,
+          "phase": 92.21
+        }
       ],
       "fft_complex": [
       ]
