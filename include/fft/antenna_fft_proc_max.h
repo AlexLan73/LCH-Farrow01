@@ -99,6 +99,17 @@ public:
     AntennaFFTResult ProcessNew(cl_mem input_signal);
     
     /**
+     * @brief Обработка батчей с ПАРАЛЛЕЛЬНЫМ выполнением (2-3 потока)
+     * 
+     * Использует несколько command queues и FFT планов для
+     * параллельной обработки батчей на GPU. ПУБЛИЧНЫЙ МЕТОД!
+     * 
+     * @param input_signal Буфер входных данных на GPU
+     * @return AntennaFFTResult с результатами для всех лучей
+     */
+    AntennaFFTResult ProcessWithBatchingNew(cl_mem input_signal);
+    
+    /**
      * @brief Вывести результаты в консоль (таблица)
      * @param result Результаты обработки
      */
@@ -209,6 +220,17 @@ private:
     void CreatePostKernel();
     
     /**
+     * @brief Создать N параллельных kernel'ов для многопоточной обработки
+     * @param num_streams Количество параллельных потоков
+     */
+    void CreateParallelKernels(size_t num_streams);
+    
+    /**
+     * @brief Освободить параллельные kernel'ы
+     */
+    void ReleaseParallelKernels();
+    
+    /**
      * @brief Найти максимумы из отдельных буферов (отладка)
      */
     std::vector<std::vector<FFTMaxResult>> FindMaximaFromBuffers(
@@ -284,6 +306,52 @@ private:
      */
     AntennaFFTResult ProcessWithBatching(cl_mem input_signal);
     
+    /**
+     * @brief Инициализировать ресурсы для параллельной обработки
+     * @param max_beams_per_stream Максимальное количество лучей на поток
+     * @param num_streams Количество параллельных потоков (default = batch_config_.num_parallel_streams)
+     */
+    void InitializeParallelResources(size_t max_beams_per_stream, size_t num_streams = 0);
+    
+    /**
+     * @brief Освободить ресурсы параллельной обработки
+     */
+    void ReleaseParallelResources();
+    
+    /**
+     * @brief Обработать один батч в указанном потоке
+     * @param input_signal Входные данные
+     * @param start_beam Начальный луч
+     * @param num_beams Количество лучей
+     * @param stream_idx Индекс потока (0, 1, 2...)
+     * @param completion_event Выходное событие завершения
+     * @return Результаты для этого батча
+     */
+    std::vector<FFTResult> ProcessBatchParallel(
+        cl_mem input_signal,
+        size_t start_beam,
+        size_t num_beams,
+        size_t stream_idx,
+        cl_event* completion_event);
+    
+    /**
+     * @brief Запустить батч асинхронно БЕЗ ожидания
+     */
+    std::vector<FFTResult> ProcessBatchParallelNoWait(
+        cl_mem input_signal,
+        size_t start_beam,
+        size_t num_beams,
+        size_t stream_idx,
+        cl_event* completion_event);
+    
+    /**
+     * @brief Прочитать результаты батча после завершения GPU
+     */
+    std::vector<FFTResult> ReadBatchResults(
+        size_t stream_idx,
+        size_t num_beams,
+        size_t start_beam);
+    
     // ═══════════════════════════════════════════════════════════════
     // Члены класса
     // ═══════════════════════════════════════════════════════════════
@@ -321,8 +389,14 @@ private:
     cl_kernel reduction_kernel_;           // Kernel для поиска максимумов
     
     // Отладочные kernel'ы (без callback'ов)
-    cl_kernel padding_kernel_;             // Kernel для padding данных
-    cl_kernel post_kernel_;                // Kernel для magnitude + select
+    cl_kernel padding_kernel_;             // Kernel для padding данных (основной)
+    cl_kernel post_kernel_;                // Kernel для magnitude + select (основной)
+    
+    // Массивы kernel'ов для ПАРАЛЛЕЛЬНОЙ обработки (по одному на поток)
+    static constexpr size_t MAX_PARALLEL_KERNELS = 8;  // Максимум параллельных потоков
+    std::vector<cl_kernel> padding_kernels_;           // padding_kernels_[stream_idx]
+    std::vector<cl_kernel> post_kernels_;              // post_kernels_[stream_idx]
+    bool parallel_kernels_created_ = false;            // Флаг создания параллельных kernel'ов
     
     // Профилирование
     struct ProfilingData {
@@ -352,11 +426,31 @@ private:
     clfftPlanHandle batch_plan_handle_;                         // Handle плана FFT для батчей
     size_t batch_plan_beams_;                                   // Для скольких лучей создан план
     
+    // ═══════════════════════════════════════════════════════════════
+    // ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА: ресурсы для каждого потока
+    // ═══════════════════════════════════════════════════════════════
+    
+    // Набор ресурсов для одного параллельного потока
+    struct ParallelResources {
+        std::unique_ptr<gpu::GPUMemoryBuffer> fft_input;      // FFT input buffer
+        std::unique_ptr<gpu::GPUMemoryBuffer> fft_output;     // FFT output buffer
+        std::unique_ptr<gpu::GPUMemoryBuffer> sel_complex;    // Selected complex output
+        std::unique_ptr<gpu::GPUMemoryBuffer> sel_magnitude;  // Selected magnitude output
+        clfftPlanHandle plan_handle = 0;                       // FFT план для этого потока
+        cl_command_queue queue = nullptr;                      // Command queue для этого потока
+        bool initialized = false;
+    };
+    
+    std::vector<ParallelResources> parallel_resources_;       // Ресурсы для параллельных потоков
+    size_t num_parallel_streams_ = 3;                         // Количество параллельных потоков
+    size_t parallel_buffers_size_ = 0;                        // Размер буферов (num_beams)
+    
     // Конфигурация batch processing
     struct BatchConfig {
-        double memory_usage_limit = 0.4;    // 40% от доступной памяти
-        double batch_size_ratio = 0.2;      // 20% лучей на батч
+        double memory_usage_limit = 0.6;    // 60% от доступной памяти
+        double batch_size_ratio = 0.1;      // 10% лучей на батч
         size_t min_beams_for_batch = 10;    // Минимум лучей для batch режима
+        size_t num_parallel_streams = 3;    // 3 параллельных потока
     };
     BatchConfig batch_config_;
     
