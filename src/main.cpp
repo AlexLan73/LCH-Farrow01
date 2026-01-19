@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 
 #include <CL/cl.h>
 #include "GPU/opencl_compute_engine.hpp"
@@ -9,13 +10,161 @@
 //#include "Test/test_signal_sinusoids.hpp"
 
 #include "Test/test_antenna_fft_proc_max.hpp"
+#include "Test/test_hybrid_buffer.hpp"  // Тесты гибридной памяти
 
 
-int main() {
+// ════════════════════════════════════════════════════════════════════════════
+// Меню выбора тестов
+// ════════════════════════════════════════════════════════════════════════════
 
-   test_antenna_fft_proc_max::run_all_tests();
+void print_menu() {
+    std::cout << "\n";
+    std::cout << "╔═══════════════════════════════════════════════════════════════════╗\n";
+    std::cout << "║               LCH-Farrow01 Test Suite                             ║\n";
+    std::cout << "╠═══════════════════════════════════════════════════════════════════╣\n";
+    std::cout << "║  1. Run Antenna FFT Tests                                         ║\n";
+    std::cout << "║  2. Run Hybrid Buffer Tests (SVM/Regular)                         ║\n";
+    std::cout << "║  3. Run Hybrid Buffer Benchmark                                   ║\n";
+    std::cout << "║  4. Show SVM Capabilities                                         ║\n";
+    std::cout << "║  5. Run ALL Tests                                                 ║\n";
+    std::cout << "║  0. Exit                                                          ║\n";
+    std::cout << "╚═══════════════════════════════════════════════════════════════════╝\n";
+    std::cout << "\nВыбор: ";
+}
 
-  return 0;
+int main(int argc, char* argv[]) {
+    
+    // Автозапуск если передан аргумент
+    if (argc > 1) {
+        std::string arg = argv[1];
+        
+        if (arg == "--antenna" || arg == "-a") {
+            test_antenna_fft_proc_max::run_all_tests();
+            return 0;
+        }
+        else if (arg == "--hybrid" || arg == "-h") {
+            // Инициализация для hybrid тестов
+            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+            test::RunHybridBufferTests();
+            gpu::OpenCLComputeEngine::Cleanup();
+            return 0;
+        }
+        else if (arg == "--benchmark" || arg == "-b") {
+            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+            test::RunHybridBufferBenchmark(1024 * 1024);  // 1M elements
+            gpu::OpenCLComputeEngine::Cleanup();
+            return 0;
+        }
+        else if (arg == "--svm" || arg == "-s") {
+            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+            auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+            std::cout << engine.GetSVMInfo();
+            gpu::OpenCLComputeEngine::Cleanup();
+            return 0;
+        }
+        else if (arg == "--all") {
+            // Запустить все тесты
+            std::cout << "\n🚀 Running ALL tests...\n";
+            
+            // Antenna FFT tests (сами инициализируют OpenCL)
+            test_antenna_fft_proc_max::run_all_tests();
+            
+            // Hybrid buffer tests
+            if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+                gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+            }
+            test::RunHybridBufferTests();
+            test::RunHybridBufferBenchmark(512 * 1024);  // 512K elements
+            
+            gpu::OpenCLComputeEngine::Cleanup();
+            return 0;
+        }
+        else if (arg == "--help") {
+            std::cout << "Usage: " << argv[0] << " [option]\n";
+            std::cout << "Options:\n";
+            std::cout << "  --antenna, -a   Run Antenna FFT tests\n";
+            std::cout << "  --hybrid, -h    Run Hybrid Buffer tests\n";
+            std::cout << "  --benchmark, -b Run Hybrid Buffer benchmark\n";
+            std::cout << "  --svm, -s       Show SVM capabilities\n";
+            std::cout << "  --all           Run all tests\n";
+            std::cout << "  --help          Show this help\n";
+            std::cout << "  (no args)       Interactive menu\n";
+            return 0;
+        }
+    }
+    
+    // Интерактивный режим
+    int choice = -1;
+    
+    while (choice != 0) {
+        print_menu();
+1        std::cin >> choice;
+        
+        switch (choice) {
+            case 1:
+                test_antenna_fft_proc_max::run_all_tests();
+                break;
+                
+            case 2:
+                if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+                    gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+                }
+                test::RunHybridBufferTests();
+                break;
+                
+            case 3:
+                if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+                    gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+                }
+                {
+                    size_t num_elements;
+                    std::cout << "Количество элементов (по умолчанию 1M): ";
+                    std::string input;
+                    std::cin.ignore();
+                    std::getline(std::cin, input);
+                    num_elements = input.empty() ? 1024 * 1024 : std::stoull(input);
+                    test::RunHybridBufferBenchmark(num_elements);
+                }
+                break;
+                
+            case 4:
+                if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+                    gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+                }
+                {
+                    auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+                    std::cout << engine.GetDeviceInfo();
+                    std::cout << engine.GetSVMInfo();
+                }
+                break;
+                
+            case 5:
+                // Run ALL
+                std::cout << "\n🚀 Running ALL tests...\n";
+                test_antenna_fft_proc_max::run_all_tests();
+                
+                if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+                    gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+                }
+                test::RunHybridBufferTests();
+                break;
+                
+            case 0:
+                std::cout << "\n👋 До свидания!\n";
+                break;
+                
+            default:
+                std::cout << "❌ Неверный выбор\n";
+                break;
+        }
+    }
+    
+    // Очистка
+    if (gpu::OpenCLComputeEngine::IsInitialized()) {
+        gpu::OpenCLComputeEngine::Cleanup();
+    }
+    
+    return 0;
 }
 
 /**
