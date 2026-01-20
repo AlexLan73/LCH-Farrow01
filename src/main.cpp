@@ -8,19 +8,42 @@
 //#include "Test/example_signal_delayed_lfm.hpp"
 //#include "Test/example_signal_combined_delays.hpp"
 //#include "Test/test_signal_sinusoids.hpp"
-
-#include "Test/test_antenna_fft_proc_max.hpp"
+//#include "Test/test_antenna_fft_proc_max.hpp"
+#include "Farrow/lagrange_matrix_loader.hpp"
 
 
 int main(int argc, char* argv[]) {
 
-    // Запуск тестов Antenna FFT
-   test_antenna_fft_proc_max::run_all_tests();
+
+    LagrangeMatrixLoader loader;
+
+    // Load matrix from JSON file
+    if (!loader.loadFromJSON("lagrange_matrix.json")) {
+        return 1;
+    }
+
+    // Display info
+    loader.printMatrixInfo();
+    loader.printMatrixSample(8);
+
+    // Access specific element example
+    try {
+        std::cout << "\nElement [0][1] = " << loader.getElement(0, 1) << std::endl;
+        std::cout << "Element [8][0] = " << loader.getElement(8, 0) << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+
 
   return 0;
 }
 
 /**
+ * 
+     // Запуск тестов Antenna FFT
+//   test_antenna_fft_proc_max::run_all_tests();
+* 
  * 
  * !!! ВАЖНО !!!
  * Примеры использования GeneratorGPU с signal_sinusoids 

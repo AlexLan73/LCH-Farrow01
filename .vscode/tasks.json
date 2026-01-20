@@ -31,8 +31,7 @@
             "args": [
                 "--build",
                 "${workspaceFolder}/build",
-                "-j",
-                "$(nproc)"
+                "-j8"
             ],
             "group": "build",
             "presentation": {

@@ -52,6 +52,23 @@ namespace antenna_fft {
  */
 class AntennaFFTProcMax {
 public:
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Публичные типы для профилирования
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * @brief Структура для хранения профилирования одного батча
+     */
+    struct BatchProfilingData {
+        size_t batch_index = 0;
+        size_t start_beam = 0;
+        size_t num_beams = 0;
+        double padding_time_ms = 0.0;   // Время padding kernel
+        double fft_time_ms = 0.0;       // Время FFT
+        double post_time_ms = 0.0;      // Время post kernel
+        double gpu_time_ms = 0.0;       // Общее GPU время (сумма)
+    };
+    
     /**
      * @brief Конструктор
      * @param params Параметры обработки (beam_count, count_points, out_count_points_fft, max_peaks_count)
@@ -312,7 +329,8 @@ private:
         size_t start_beam,
         size_t num_beams,
         cl_command_queue batch_queue,
-        cl_event* completion_event);
+        cl_event* completion_event,
+        BatchProfilingData* out_profiling = nullptr);  // Детальное профилирование
     
     /**
      * @brief Обработать все лучи с использованием batch processing
@@ -471,15 +489,12 @@ private:
     };
     BatchConfig batch_config_;
     
-    // Профилирование для batch режима
-    struct BatchProfilingData {
-        size_t batch_index;
-        size_t start_beam;
-        size_t num_beams;
-        double gpu_time_ms;
-    };
+    // Профилирование для batch режима (структура определена в public)
     std::vector<BatchProfilingData> batch_profiling_;
     double batch_total_cpu_time_ms_;        // Общее CPU время для всех батчей
+    double batch_total_padding_ms_;         // Суммарное время padding
+    double batch_total_fft_ms_;             // Суммарное время FFT
+    double batch_total_post_ms_;            // Суммарное время post
     bool last_used_batch_mode_;             // Был ли использован batch режим в последнем вызове
     
     // Кэш для планов FFT (ключ: hash параметров)

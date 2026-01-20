@@ -55,6 +55,9 @@ AntennaFFTProcMax::AntennaFFTProcMax(const AntennaFFTParams& params)
        post_kernel_(nullptr),
        batch_config_(),
        batch_total_cpu_time_ms_(0.0),
+       batch_total_padding_ms_(0.0),
+       batch_total_fft_ms_(0.0),
+       batch_total_post_ms_(0.0),
        last_used_batch_mode_(false),
        batch_buffers_size_(0),
        batch_plan_handle_(0),
@@ -157,6 +160,9 @@ AntennaFFTProcMax::AntennaFFTProcMax(AntennaFFTProcMax&& other) noexcept
        batch_config_(other.batch_config_),
        batch_profiling_(std::move(other.batch_profiling_)),
        batch_total_cpu_time_ms_(other.batch_total_cpu_time_ms_),
+       batch_total_padding_ms_(other.batch_total_padding_ms_),
+       batch_total_fft_ms_(other.batch_total_fft_ms_),
+       batch_total_post_ms_(other.batch_total_post_ms_),
        last_used_batch_mode_(other.last_used_batch_mode_) {
 
     other.plan_handle_ = 0;
@@ -203,6 +209,9 @@ AntennaFFTProcMax& AntennaFFTProcMax::operator=(AntennaFFTProcMax&& other) noexc
         batch_config_ = other.batch_config_;
         batch_profiling_ = std::move(other.batch_profiling_);
         batch_total_cpu_time_ms_ = other.batch_total_cpu_time_ms_;
+        batch_total_padding_ms_ = other.batch_total_padding_ms_;
+        batch_total_fft_ms_ = other.batch_total_fft_ms_;
+        batch_total_post_ms_ = other.batch_total_post_ms_;
         last_used_batch_mode_ = other.last_used_batch_mode_;
 
         other.plan_handle_ = 0;
@@ -395,10 +404,10 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
         // БЕЗ batch_input_buffer_ - читаем напрямую из input_signal!
         
         // Размер буфера для MaxValue результатов (новый unified kernel)
-        // MaxValue: { uint index, float magnitude, float phase } = 12 bytes
+        // MaxValue: { uint index, float magnitude, float phase, uint pad } = 16 bytes
         size_t maxima_buf_elements = max_batch_beams * params_.max_peaks_count;
         // Выравниваем на размер complex (8 bytes) для создания буфера
-        size_t maxima_complex_elements = (maxima_buf_elements * 12 + 7) / 8;
+        size_t maxima_complex_elements = (maxima_buf_elements * 16 + 7) / 8;
         
         batch_fft_input_ = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
         batch_fft_output_ = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
@@ -458,6 +467,11 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
     if (!post_kernel_) CreatePostKernel();
     if (!padding_kernel_) CreatePaddingKernel();
     
+    // Инициализировать суммарные времена
+    batch_total_padding_ms_ = 0.0;
+    batch_total_fft_ms_ = 0.0;
+    batch_total_post_ms_ = 0.0;
+    
     // Обработать каждый батч
     size_t processed_beams = 0;
     for (size_t batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
@@ -479,48 +493,28 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
                   << " (" << beams_in_batch << " beams, queue " 
                   << gpu::CommandQueuePool::GetCurrentQueueIndex() << ")\n";
         
-        // Сохранить информацию о батче
-        batch_infos.push_back({start_beam, beams_in_batch});
+        // Структура для профилирования этого батча
+        BatchProfilingData batch_prof;
+        batch_prof.batch_index = batch_idx;
         
-        // Событие завершения
-        cl_event completion_event = nullptr;
-        
-        // Обработать батч
+        // Обработать батч с детальным профилированием
         auto batch_results = ProcessBatch(input_signal, start_beam, beams_in_batch, 
-                                          batch_queue, &completion_event);
+                                          batch_queue, nullptr, &batch_prof);
         
         // Сохранить результаты
         for (auto& result : batch_results) {
             all_results.push_back(std::move(result));
         }
         
-        // Сохранить событие
-        if (completion_event) {
-            completion_events.push_back(completion_event);
-        }
+        // Сохранить профилирование
+        batch_profiling_.push_back(batch_prof);
+        
+        // Накапливаем суммарные времена
+        batch_total_padding_ms_ += batch_prof.padding_time_ms;
+        batch_total_fft_ms_ += batch_prof.fft_time_ms;
+        batch_total_post_ms_ += batch_prof.post_time_ms;
         
         processed_beams += beams_in_batch;
-    }
-    
-    // Ждать завершения всех батчей
-    if (!completion_events.empty()) {
-        std::cout << "\n  Waiting for all batches to complete...\n";
-        clWaitForEvents(static_cast<cl_uint>(completion_events.size()), completion_events.data());
-        
-        // Профилировать каждый батч
-        for (size_t i = 0; i < completion_events.size(); ++i) {
-            BatchProfilingData prof;
-            prof.batch_index = i;
-            prof.start_beam = batch_infos[i].start_beam;
-            prof.num_beams = batch_infos[i].num_beams;
-            prof.gpu_time_ms = ProfileEvent(completion_events[i], "Batch " + std::to_string(i));
-            batch_profiling_.push_back(prof);
-        }
-        
-        // Освободить события
-        for (auto& event : completion_events) {
-            clReleaseEvent(event);
-        }
     }
     
     auto cpu_end = std::chrono::high_resolution_clock::now();
@@ -530,19 +524,26 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
     AntennaFFTResult result(params_.beam_count, nFFT_, params_.task_id, params_.module_name);
     result.results = std::move(all_results);
     
+    // Вычислить общее GPU время
+    double total_gpu_time = batch_total_padding_ms_ + batch_total_fft_ms_ + batch_total_post_ms_;
+    
     // Вывести профилирование
     std::cout << "\n  ┌─────────────────────────────────────────────────────────────┐\n";
-    std::cout << "  │  BATCH PROFILING                                            │\n";
+    std::cout << "  │  BATCH PROFILING (детально)                                 │\n";
     std::cout << "  └─────────────────────────────────────────────────────────────┘\n";
     
-    double total_gpu_time = 0.0;
     for (const auto& prof : batch_profiling_) {
-        printf("  │  Batch %zu (%3zu beams: %3zu-%3zu) │  %10.4f ms  │\n", 
+        printf("  │  Batch %zu (%3zu beams: %3zu-%3zu) │  GPU: %8.4f ms  │\n", 
                prof.batch_index, prof.num_beams, prof.start_beam, 
                prof.start_beam + prof.num_beams - 1, prof.gpu_time_ms);
-        total_gpu_time += prof.gpu_time_ms;
+        printf("  │    Padding: %8.4f | FFT: %8.4f | Post: %8.4f ms │\n",
+               prof.padding_time_ms, prof.fft_time_ms, prof.post_time_ms);
     }
     
+    std::cout << "  ├─────────────────────────────────────────────────────────────┤\n";
+    printf("  │  Total Padding time      │  %10.4f ms  │\n", batch_total_padding_ms_);
+    printf("  │  Total FFT time          │  %10.4f ms  │\n", batch_total_fft_ms_);
+    printf("  │  Total Post time         │  %10.4f ms  │\n", batch_total_post_ms_);
     std::cout << "  ├─────────────────────────────────────────────────────────────┤\n";
     printf("  │  Total GPU time          │  %10.4f ms  │\n", total_gpu_time);
     printf("  │  Total CPU time          │  %10.4f ms  │\n", batch_total_cpu_time_ms_);
@@ -561,13 +562,13 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
     // ═══════════════════════════════════════════════════════════════════════════
     // ОБНОВИТЬ last_profiling_ для совместимости с GetProfilingStats()
     // ═══════════════════════════════════════════════════════════════════════════
-    last_profiling_.upload_time_ms = 0.0;           // Нет отдельной загрузки (padding kernel)
-    last_profiling_.pre_callback_time_ms = 0.0;     // Включено в FFT
-    last_profiling_.fft_time_ms = total_gpu_time;   // Суммарное GPU время всех батчей
-    last_profiling_.post_callback_time_ms = 0.0;    // Включено в batch processing
-    last_profiling_.reduction_time_ms = 0.0;        // Включено в post kernel
-    last_profiling_.download_time_ms = 0.0;         // Включено в cpu time
-    last_profiling_.total_time_ms = batch_total_cpu_time_ms_;
+    last_profiling_.upload_time_ms = batch_total_padding_ms_;    // Padding = Upload
+    last_profiling_.pre_callback_time_ms = 0.0;                  // Нет pre-callback в batch
+    last_profiling_.fft_time_ms = batch_total_fft_ms_;           // FFT время
+    last_profiling_.post_callback_time_ms = batch_total_post_ms_;// Post kernel время
+    last_profiling_.reduction_time_ms = 0.0;                     // Включено в post
+    last_profiling_.download_time_ms = 0.0;                      // Включено в cpu time
+    last_profiling_.total_time_ms = total_gpu_time;              // Суммарное GPU время
     
     std::cout << "  ✅ Batch processing completed! (" << params_.beam_count << " beams in " 
               << std::fixed << std::setprecision(2) << (batch_total_cpu_time_ms_ / 1000.0) << " sec)\n\n";
@@ -584,7 +585,8 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
     size_t start_beam,
     size_t num_beams,
     cl_command_queue batch_queue,
-    cl_event* completion_event) {
+    cl_event* completion_event,
+    BatchProfilingData* out_profiling) {
     
     std::vector<FFTResult> results;
     results.reserve(num_beams);
@@ -686,19 +688,46 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 5: Читаем MaxValue результаты напрямую (фаза уже вычислена на GPU!)
+    // STEP 5: Ждём завершения и профилируем ВСЕ события
     // ═══════════════════════════════════════════════════════════════════════════
     
     clWaitForEvents(1, &event_post);
     
+    // ПРОФИЛИРОВАНИЕ: измеряем ВСЕ события ДО их освобождения
+    double padding_time_ms = 0.0;
+    double fft_time_ms = 0.0;
+    double post_time_ms = 0.0;
+    
+    if (out_profiling || completion_event) {
+        // Профилируем каждый этап
+        padding_time_ms = ProfileEvent(event_padding, "");  // без вывода
+        fft_time_ms = ProfileEvent(event_fft, "");
+        post_time_ms = ProfileEvent(event_post, "");
+        
+        // Заполняем выходную структуру если указатель предоставлен
+        if (out_profiling) {
+            out_profiling->start_beam = start_beam;
+            out_profiling->num_beams = num_beams;
+            out_profiling->padding_time_ms = padding_time_ms;
+            out_profiling->fft_time_ms = fft_time_ms;
+            out_profiling->post_time_ms = post_time_ms;
+            out_profiling->gpu_time_ms = padding_time_ms + fft_time_ms + post_time_ms;
+        }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 6: Читаем MaxValue результаты напрямую (фаза уже вычислена на GPU!)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
     // Читаем MaxValue структуры: { uint index, float magnitude, float phase }
     size_t maxima_count = num_beams * params_.max_peaks_count;
     
-    // Структура MaxValue совпадает с GPU (12 bytes)
+    // Структура MaxValue совпадает с GPU (16 bytes с pad!)
     struct MaxValue {
         cl_uint index;
         cl_float magnitude;
         cl_float phase;
+        cl_uint pad;
     };
     std::vector<MaxValue> maxima_result(maxima_count);
     
@@ -729,7 +758,7 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
         results.push_back(std::move(beam_result));
     }
     
-    // Установить completion_event для этого батча
+    // Установить completion_event для этого батча (если нужно для дополнительного ожидания)
     if (completion_event) {
         *completion_event = event_post;
         // НЕ освобождаем event_post - он будет освобождён вызывающим кодом
@@ -737,7 +766,7 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
         clReleaseEvent(event_post);
     }
     
-    // Освободить промежуточные события
+    // Освободить промежуточные события ПОСЛЕ профилирования
     clReleaseEvent(event_padding);
     clReleaseEvent(event_fft);
     
@@ -1571,29 +1600,110 @@ void AntennaFFTProcMax::CreateParallelKernels(size_t num_streams) {
     )CL";
     
     // ═══════════════════════════════════════════════════════════════════════════
-    // POST KERNEL SOURCE
+    // POST KERNEL SOURCE (UNIFIED: magnitude + поиск max + фаза)
     // ═══════════════════════════════════════════════════════════════════════════
     const char* post_source = R"CL(
+        // Структура результата (должна совпадать с C++ MaxValue - 16 bytes с pad!)
+        typedef struct {
+            uint index;
+            float magnitude;
+            float phase;
+            uint pad;
+        } MaxValue;
+        
         __kernel void post_kernel(
-            __global const float2* fft_output,
-            __global float2* selected_complex,
-            __global float* selected_magnitude,
+            __global const float2* fft_output,     // FFT результат: beam_count * nFFT
+            __global MaxValue* maxima_output,      // Результат: beam_count * max_peaks_count
             uint beam_count,
             uint nFFT,
-            uint search_range
+            uint search_range,                     // Сколько точек анализировать
+            uint max_peaks_count                   // Сколько максимумов искать
         ) {
-            uint gid = get_global_id(0);
-            uint beam_idx = gid / search_range;
-            uint pos = gid % search_range;
+            uint beam_idx = get_group_id(0);
+            uint lid = get_local_id(0);
+            uint local_size = get_local_size(0);
             
-            if (beam_idx >= beam_count || pos >= search_range) return;
+            if (beam_idx >= beam_count) return;
             
-            uint fft_idx = beam_idx * nFFT + pos;
-            float2 val = fft_output[fft_idx];
-            float mag = sqrt(val.x * val.x + val.y * val.y);
+            // Local memory для редукции
+            __local float local_mag[256];
+            __local uint local_idx[256];
+            __local float2 local_complex[256];
+            __local float found_mags[16];
+            __local uint found_indices[16];
+            __local float2 found_complex[16];
             
-            selected_complex[gid] = val;
-            selected_magnitude[gid] = mag;
+            // ЭТАП 1: Каждый поток находит свой локальный максимум
+            float my_max_mag = -1.0f;
+            uint my_max_idx = 0;
+            float2 my_max_complex = (float2)(0.0f, 0.0f);
+            
+            for (uint i = lid; i < search_range; i += local_size) {
+                uint fft_idx = beam_idx * nFFT + i;
+                float2 val = fft_output[fft_idx];
+                float mag = sqrt(val.x * val.x + val.y * val.y);
+                
+                if (mag > my_max_mag) {
+                    my_max_mag = mag;
+                    my_max_idx = i;
+                    my_max_complex = val;
+                }
+            }
+            
+            local_mag[lid] = my_max_mag;
+            local_idx[lid] = my_max_idx;
+            local_complex[lid] = my_max_complex;
+            barrier(CLK_LOCAL_MEM_FENCE);
+            
+            // ЭТАП 2: Поток 0 ищет top-N максимумов
+            if (lid == 0) {
+                for (uint peak = 0; peak < max_peaks_count && peak < 16; ++peak) {
+                    float best_mag = -1.0f;
+                    uint best_idx = 0;
+                    float2 best_complex = (float2)(0.0f, 0.0f);
+                    uint best_local_idx = 0;
+                    
+                    for (uint j = 0; j < local_size; ++j) {
+                        if (local_mag[j] > best_mag) {
+                            best_mag = local_mag[j];
+                            best_idx = local_idx[j];
+                            best_complex = local_complex[j];
+                            best_local_idx = j;
+                        }
+                    }
+                    
+                    if (best_mag > 0.0f) {
+                        found_mags[peak] = best_mag;
+                        found_indices[peak] = best_idx;
+                        found_complex[peak] = best_complex;
+                        local_mag[best_local_idx] = -1.0f;
+                    } else {
+                        found_mags[peak] = 0.0f;
+                        found_indices[peak] = 0;
+                        found_complex[peak] = (float2)(0.0f, 0.0f);
+                    }
+                }
+            }
+            barrier(CLK_LOCAL_MEM_FENCE);
+            
+            // ЭТАП 3: Записать результаты с вычислением фазы
+            if (lid < max_peaks_count && lid < 16) {
+                MaxValue mv;
+                mv.index = found_indices[lid];
+                mv.magnitude = found_mags[lid];
+                mv.pad = 0;
+                
+                float2 c = found_complex[lid];
+                if (found_mags[lid] > 0.0f) {
+                    float phase_rad = atan2(c.y, c.x);
+                    mv.phase = phase_rad * 57.29577951f;  // rad -> degrees
+                } else {
+                    mv.phase = 0.0f;
+                }
+                
+                uint out_idx = beam_idx * max_peaks_count + lid;
+                maxima_output[out_idx] = mv;
+            }
         }
     )CL";
     
@@ -2492,10 +2602,10 @@ void AntennaFFTProcMax::InitializeParallelResources(size_t max_beams_per_stream,
     
     size_t fft_buf_size = max_beams_per_stream * nFFT_;
     // Размер буфера для MaxValue результатов (новый unified kernel)
-    // MaxValue: { uint index, float magnitude, float phase } = 12 bytes
+    // MaxValue: { uint index, float magnitude, float phase, uint pad } = 16 bytes
     size_t maxima_buf_elements = max_beams_per_stream * params_.max_peaks_count;
     // Выравниваем на размер complex (8 bytes) для создания буфера
-    size_t maxima_complex_elements = (maxima_buf_elements * 12 + 7) / 8;
+    size_t maxima_complex_elements = (maxima_buf_elements * 16 + 7) / 8;
     
     for (size_t i = 0; i < num_parallel_streams_; ++i) {
         auto& res = parallel_resources_[i];
@@ -2599,21 +2709,49 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatchParallelNoWait(
     err |= clSetKernelArg(pad_kernel, 4, sizeof(cl_uint), &nfft);
     err |= clSetKernelArg(pad_kernel, 5, sizeof(cl_uint), &beam_offset);
     
+    if (err != CL_SUCCESS) {
+        std::cerr << "  ❌ ProcessBatchParallelNoWait: set padding kernel args failed: " << err << "\n";
+        if (completion_event) *completion_event = nullptr;
+        return {};
+    }
+    
+    cl_event event_fill = nullptr;
     cl_event event_padding = nullptr;
     
     // Сначала обнулим весь буфер (если num_beams < fft_batch_size)
+    // ВАЖНО: используем событие чтобы padding kernel ждал завершения!
     if (num_beams < fft_batch_size) {
-        // Обнуляем буфер
         std::complex<float> zero(0.0f, 0.0f);
         err = clEnqueueFillBuffer(res.queue, fft_in, &zero, sizeof(zero), 
                                   0, fft_batch_size * nFFT_ * sizeof(std::complex<float>),
-                                  0, nullptr, nullptr);
+                                  0, nullptr, &event_fill);
+        if (err != CL_SUCCESS) {
+            std::cerr << "  ❌ ProcessBatchParallelNoWait: FillBuffer failed: " << err << "\n";
+            if (completion_event) *completion_event = nullptr;
+            return {};
+        }
     }
     
     // Заполняем только num_beams реальными данными
+    // Padding kernel зависит от FillBuffer (если был)
     size_t real_padding_size = num_beams * nFFT_;
+    cl_uint num_wait_events = event_fill ? 1 : 0;
+    cl_event* wait_list = event_fill ? &event_fill : nullptr;
+    
     err = clEnqueueNDRangeKernel(res.queue, pad_kernel, 1, nullptr, 
-                                 &real_padding_size, nullptr, 0, nullptr, &event_padding);
+                                 &real_padding_size, nullptr, 
+                                 num_wait_events, wait_list, &event_padding);
+    
+    // Освобождаем event_fill после enqueue (FFT уже "запомнил" зависимость)
+    if (event_fill) {
+        clReleaseEvent(event_fill);
+    }
+    
+    if (err != CL_SUCCESS || event_padding == nullptr) {
+        std::cerr << "  ❌ ProcessBatchParallelNoWait: padding kernel failed: " << err << "\n";
+        if (completion_event) *completion_event = nullptr;
+        return {};
+    }
     
     // STEP 2: FFT (работает с ПОЛНЫМ batch size = fft_batch_size)
     cl_event event_fft = nullptr;
@@ -2629,28 +2767,36 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatchParallelNoWait(
         nullptr
     );
     
+    // Освобождаем event_padding после enqueue (FFT уже "запомнил" зависимость)
     clReleaseEvent(event_padding);
     
-    if (status != CLFFT_SUCCESS) {
+    if (status != CLFFT_SUCCESS || event_fft == nullptr) {
         std::cerr << "  ❌ FFT FAILED! Status=" << status 
                   << ", stream_idx=" << stream_idx 
                   << ", num_beams=" << num_beams 
                   << ", fft_batch_size=" << fft_batch_size
                   << ", plan_handle=" << res.plan_handle << "\n";
-        throw std::runtime_error("ProcessBatchParallelNoWait: FFT failed, status=" + std::to_string(status));
+        if (completion_event) *completion_event = nullptr;
+        return {};
     }
     
     // STEP 3: Post-kernel (unified: magnitude + find maxima + phase)
     cl_uint search_range = static_cast<cl_uint>(params_.out_count_points_fft);
     cl_uint max_peaks = static_cast<cl_uint>(params_.max_peaks_count);
     
-    // Новый формат kernel'а: (fft_output, maxima_output, beam_count, nfft, search_range, max_peaks_count)
     err = clSetKernelArg(pst_kernel, 0, sizeof(cl_mem), &fft_out);
     err |= clSetKernelArg(pst_kernel, 1, sizeof(cl_mem), &maxima_out);
-    err |= clSetKernelArg(pst_kernel, 2, sizeof(cl_uint), &batch_beam_count);  // num_beams, не fft_batch_size!
+    err |= clSetKernelArg(pst_kernel, 2, sizeof(cl_uint), &batch_beam_count);
     err |= clSetKernelArg(pst_kernel, 3, sizeof(cl_uint), &nfft);
     err |= clSetKernelArg(pst_kernel, 4, sizeof(cl_uint), &search_range);
     err |= clSetKernelArg(pst_kernel, 5, sizeof(cl_uint), &max_peaks);
+    
+    if (err != CL_SUCCESS) {
+        std::cerr << "  ❌ ProcessBatchParallelNoWait: set post kernel args failed: " << err << "\n";
+        clReleaseEvent(event_fft);
+        if (completion_event) *completion_event = nullptr;
+        return {};
+    }
     
     // Unified kernel: один work-group на луч, 256 work-items
     size_t post_global_size = num_beams * 256;
@@ -2661,7 +2807,14 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatchParallelNoWait(
                                  &post_global_size, &post_local_size, 
                                  1, &event_fft, &event_post);
     
+    // Освобождаем event_fft после enqueue
     clReleaseEvent(event_fft);
+    
+    if (err != CL_SUCCESS || event_post == nullptr) {
+        std::cerr << "  ❌ ProcessBatchParallelNoWait: post kernel failed: " << err << "\n";
+        if (completion_event) *completion_event = nullptr;
+        return {};
+    }
     
     // Установить событие завершения (НЕ ждём!)
     if (completion_event) {
@@ -2685,13 +2838,15 @@ std::vector<FFTResult> AntennaFFTProcMax::ReadBatchResults(
     
     auto& res = parallel_resources_[stream_idx];
     
-    // Читаем MaxValue структуры напрямую: { uint index, float magnitude, float phase }
+    // Читаем MaxValue структуры напрямую: { uint index, float magnitude, float phase, uint pad }
+    // ВАЖНО: структура должна совпадать с kernel (16 bytes с padding!)
     size_t maxima_count = num_beams * params_.max_peaks_count;
     
     struct MaxValue {
         cl_uint index;
         cl_float magnitude;
         cl_float phase;
+        cl_uint pad;  // Выравнивание до 16 байт
     };
     std::vector<MaxValue> maxima_result(maxima_count);
     
@@ -2905,9 +3060,17 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
     // ═══════════════════════════════════════════════════════════════════════════
     std::cout << "\n  ⏳ Ожидание завершения всех батчей...\n";
     
-    if (!completion_events.empty()) {
-        cl_int err = clWaitForEvents(static_cast<cl_uint>(completion_events.size()), 
-                                     completion_events.data());
+    // Фильтруем null события (могут быть если batch fail)
+    std::vector<cl_event> valid_events;
+    for (auto& ev : completion_events) {
+        if (ev != nullptr) {
+            valid_events.push_back(ev);
+        }
+    }
+    
+    if (!valid_events.empty()) {
+        cl_int err = clWaitForEvents(static_cast<cl_uint>(valid_events.size()), 
+                                     valid_events.data());
         if (err != CL_SUCCESS) {
             std::cerr << "  ⚠️ clWaitForEvents error: " << err << "\n";
         }
@@ -2915,6 +3078,15 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
     
     auto gpu_end = std::chrono::high_resolution_clock::now();
     double gpu_time_ms = std::chrono::duration<double, std::milli>(gpu_end - gpu_start).count();
+    
+    // Профилируем каждое событие
+    double total_profiled_gpu_time = 0.0;
+    for (size_t i = 0; i < completion_events.size(); ++i) {
+        if (completion_events[i]) {
+            double event_time = ProfileEvent(completion_events[i], "");
+            total_profiled_gpu_time += event_time;
+        }
+    }
     
     // ═══════════════════════════════════════════════════════════════════════════
     // ШАГ 5: Собрать результаты из всех батчей
@@ -2926,12 +3098,14 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
         auto& res = parallel_resources_[info.stream_idx];
         
         // Читаем MaxValue результаты напрямую (фаза уже вычислена на GPU!)
+        // ВАЖНО: структура 16 bytes (с pad) для выравнивания GPU
         size_t maxima_count = info.num_beams * params_.max_peaks_count;
         
         struct MaxValue {
             cl_uint index;
             cl_float magnitude;
             cl_float phase;
+            cl_uint pad;
         };
         std::vector<MaxValue> maxima_result(maxima_count);
         
@@ -2974,7 +3148,8 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
     std::cout << "  └─────────────────────────────────────────────────────────────┘\n";
     printf("  │  Батчей обработано       │  %10zu  │\n", batches_info.size());
     printf("  │  Параллельных потоков    │  %10zu  │\n", num_streams);
-    printf("  │  GPU time (все батчи)    │  %10.4f ms │\n", gpu_time_ms);
+    printf("  │  GPU time (profiled)     │  %10.4f ms │\n", total_profiled_gpu_time);
+    printf("  │  GPU time (wall clock)   │  %10.4f ms │\n", gpu_time_ms);
     printf("  │  Total CPU time          │  %10.4f ms │\n", cpu_time_ms);
     printf("  │  Processing speed        │  %10.2f beams/sec │\n", 
            params_.beam_count * 1000.0 / cpu_time_ms);
@@ -2983,13 +3158,17 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
     // ═══════════════════════════════════════════════════════════════════════════
     // ОБНОВИТЬ last_profiling_ для совместимости с GetProfilingStats()
     // ═══════════════════════════════════════════════════════════════════════════
-    last_profiling_.upload_time_ms = 0.0;           // Нет отдельной загрузки (padding kernel)
-    last_profiling_.pre_callback_time_ms = 0.0;     // Включено в FFT
-    last_profiling_.fft_time_ms = gpu_time_ms;      // Полное GPU время (параллельно)
-    last_profiling_.post_callback_time_ms = 0.0;    // Включено в FFT
-    last_profiling_.reduction_time_ms = 0.0;        // Включено в post kernel
-    last_profiling_.download_time_ms = 0.0;         // Включено в cpu_time_ms
-    last_profiling_.total_time_ms = cpu_time_ms;    // Полное время обработки
+    // В параллельном режиме события выполняются последовательно (один stream),
+    // поэтому wall-clock время GPU = реальное GPU время выполнения
+    // total_profiled_gpu_time - это только время post_kernel (очень маленькое)
+    // gpu_time_ms - это wall-clock время от первого enqueue до последнего finish
+    last_profiling_.upload_time_ms = 0.0;           // Padding включён в FFT time
+    last_profiling_.pre_callback_time_ms = 0.0;     // Нет pre-callback
+    last_profiling_.fft_time_ms = gpu_time_ms;      // Wall-clock GPU время (включает все операции)
+    last_profiling_.post_callback_time_ms = total_profiled_gpu_time;  // Только post_kernel время
+    last_profiling_.reduction_time_ms = 0.0;        // Включено в post
+    last_profiling_.download_time_ms = 0.0;         // Включено в CPU time
+    last_profiling_.total_time_ms = gpu_time_ms;    // Полное GPU время
     
     return result;
 }

@@ -221,7 +221,7 @@ if(OPENCL_ENABLED)
         if(NOT CLFFT_FOUND)
             find_library(CLFFT_LIB
                 NAMES clFFT
-                PATHS /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu /opt/AMD/clFFT/lib64
+                PATHS /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /opt/AMD/clFFT/lib64
             )
             
             find_path(CLFFT_INCLUDE_DIR
@@ -333,18 +333,6 @@ endif()
 
 if(OPENCL_ENABLED)
     list(APPEND SOURCES
-#        src/signalbuffer.cpp
-#        src/filterbank.cpp
-#        src/processingpipeline.cpp
-#        src/profilingengine.cpp
-#        src/lagrangematrix.cpp
-#        src/lfmsignalgenerator.cpp
-#        src/gpubackend/openclbackend.cpp
-#        src/gpubackend/gpufactory.cpp
-#        src/fractionaldelaycpu.cpp
-#        src/resultcomparator.cpp
-#        src/gpuprofiling.cpp
-#        src/generator/generatorgpu.cpp
         src/generator/generator_gpu_new.cpp
         src/fft/antenna_fft_proc_max.cpp
         src/GPU/opencl_manager.cpp
@@ -357,19 +345,7 @@ if(OPENCL_ENABLED)
         src/Test/test_antenna_fft_proc_max.cpp
     )
     list(APPEND HEADERS
-#        include/signalbuffer.h
-#        include/filterbank.h
-#        include/processingpipeline.h
-#        include/profilingengine.h
-#        include/lagrangematrix.h
-#        include/lfmsignalgenerator.h
-#        include/gpubackend/igpubackend.h
-#        include/gpubackend/openclbackend.h
-#        include/gpubackend/gpufactory.h
-#        include/fractionaldelaycpu.h
-#        include/resultcomparator.h
-#        include/gpuprofiling.h
-#        include/generator/generatorgpu.h
+        include/Farrow/lagrange_matrix_loader.hpp
         include/interface/lfm_parameters.h
         include/interface/DelayParameter.h
         include/interface/combined_delay_param.h
@@ -413,6 +389,17 @@ endif()
 target_include_directories(${PROJECT_NAME} PRIVATE 
     ${CMAKE_SOURCE_DIR}/include
 )
+
+# ============================================================================
+# JSON  nlohmann_json   LINKING LINIX - UBUNTU
+# ============================================================================
+if(IS_LINUX)
+    # Найти пакет nlohmann_json
+    find_package(nlohmann_json 3.2.0 REQUIRED)
+
+    # В твоём target'е добавь
+    target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
+endif()
 
 # ============================================================================
 # OPENCL & clFFT LINKING
@@ -546,6 +533,14 @@ endif()
 # Копирование DLL теперь выполняется в секции clFFT LINKING выше
 # Эта секция оставлена для обратной совместимости, если нужно
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
+
+# Копировать JSON файл
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    ${CMAKE_SOURCE_DIR}/include/Farrow/lagrange_matrix.json
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/lagrange_matrix.json
+    COMMENT "Copying lagrange_matrix.json to build directory"
+)
 
 # ============================================================================
 # BUILD SUMMARY
