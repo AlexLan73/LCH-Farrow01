@@ -1,5 +1,6 @@
 #include "Test/test_antenna_fft_proc_max.hpp"
 #include "fft/antenna_fft_proc_max.h"
+#include "fft/fft_result_printer.hpp"  // Новый класс для вывода
 #include "generator/generator_gpu_new.h"
 #include "interface/lfm_parameters.h"
 #include "GPU/opencl_compute_engine.hpp"
@@ -22,8 +23,8 @@ void test_basic_with_generator() {
         // ═══════════════════════════════════════════════════════════════════
         // ПАРАМЕТРЫ ТЕСТА
         // ═══════════════════════════════════════════════════════════════════
-        const size_t NUM_BEAMS = 80;
-        const size_t COUNT_POINTS = 1300000;
+        const size_t NUM_BEAMS = 160;
+        const size_t COUNT_POINTS = 1000000;
         const size_t OUT_COUNT_POINTS_FFT = 1000;
         const size_t MAX_PEAKS_COUNT = 5;
         
@@ -88,11 +89,21 @@ void test_basic_with_generator() {
         std::cout << "Processing FFT...\n";
         antenna_fft::AntennaFFTResult result = processor.Process(signal_gpu);
         
-        // Вывести результаты
-        processor.PrintResults(result);
+        // ═══════════════════════════════════════════════════════════════════
+        // ВЫВОД через FFTResultPrinter (ООП - разделение ответственности)
+        // ═══════════════════════════════════════════════════════════════════
+        antenna_fft::FFTResultPrinter printer;
         
-        // Вывести статистику профилирования
-        std::cout << processor.GetProfilingStats() << "\n";
+        // Настраиваем вывод
+        auto& opts = printer.GetOptions();
+        opts.show_all_peaks = true;        // Показать ВСЕ пики (3, 5, 7...)
+        opts.max_beams_to_display = 5;     // Показать первые 5 лучей
+        opts.show_parameters = true;
+        opts.show_profiling = true;
+        opts.show_results = true;
+        
+        // Выводим всё
+        printer.PrintAll(result, processor.GetLastProfilingResults(), fft_params);
         
         // Сохранить результаты в файл
         processor.SaveResultsToFile(result, "antenna_result.md");
@@ -272,6 +283,21 @@ void test_process_new_large() {
         antenna_fft::AntennaFFTProcMax processor(fft_params);
         
         // ═══════════════════════════════════════════════════════════════════════
+        // Создать FFTResultPrinter для вывода профилирования (как в test_basic)
+        // ═══════════════════════════════════════════════════════════════════════
+        antenna_fft::FFTResultPrinter printer;
+        auto& opts = printer.GetOptions();
+        opts.show_all_peaks = false;         // Не показывать пики (много данных)
+        opts.max_beams_to_display = 0;       // Не показывать результаты по лучам
+        opts.show_parameters = false;        // Параметры уже выводятся выше
+        opts.show_profiling = true;          // ВАЖНО: показать профилирование!
+        opts.show_results = false;           // Не показывать результаты
+        
+        // Накапливаем суммарное время для итогов
+        double total_fft_time_ms = 0.0;
+        double total_total_time_ms = 0.0;
+        
+        // ═══════════════════════════════════════════════════════════════════════
         // ПЕРВЫЙ ВЫЗОВ - буферы и план создаются
         // ═══════════════════════════════════════════════════════════════════════
         std::cout << "┌─────────────────────────────────────────────────────────────┐\n";
@@ -283,12 +309,18 @@ void test_process_new_large() {
         if (result1.results.size() != NUM_BEAMS) {
             throw std::runtime_error("First call: Incorrect number of results");
         }
-        std::cout << "\n✅ Первый вызов: " << result1.results.size() << " beams processed\n\n";
+        std::cout << "\n✅ Первый вызов: " << result1.results.size() << " beams processed\n";
+        
+        // Вывести профилирование первого вызова
+        printer.PrintProfiling(processor.GetLastProfilingResults());
+        auto prof1 = processor.GetLastProfilingResults();
+        total_fft_time_ms += prof1.fft_time_ms;
+        total_total_time_ms += prof1.total_time_ms;
         
         // ═══════════════════════════════════════════════════════════════════════
         // ВТОРОЙ ВЫЗОВ - буферы и план переиспользуются!
         // ═══════════════════════════════════════════════════════════════════════
-        std::cout << "┌─────────────────────────────────────────────────────────────┐\n";
+        std::cout << "\n┌─────────────────────────────────────────────────────────────┐\n";
         std::cout << "│  ВТОРОЙ ВЫЗОВ ProcessNew() - переиспользование кэша! ♻️     │\n";
         std::cout << "└─────────────────────────────────────────────────────────────┘\n\n";
         
@@ -298,6 +330,12 @@ void test_process_new_large() {
             throw std::runtime_error("Second call: Incorrect number of results");
         }
         std::cout << "\n✅ Второй вызов: " << result2.results.size() << " beams processed\n";
+        
+        // Вывести профилирование второго вызова
+        printer.PrintProfiling(processor.GetLastProfilingResults());
+        auto prof2 = processor.GetLastProfilingResults();
+        total_fft_time_ms += prof2.fft_time_ms;
+        total_total_time_ms += prof2.total_time_ms;
         
         // ═══════════════════════════════════════════════════════════════════════
         // ТРЕТИЙ ВЫЗОВ - ProcessWithBatchingNew() ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА!
@@ -313,6 +351,12 @@ void test_process_new_large() {
         }
         std::cout << "\n✅ Третий вызов (параллельный): " << result3.results.size() << " beams processed\n";
         
+        // Вывести профилирование третьего вызова
+        printer.PrintProfiling(processor.GetLastProfilingResults());
+        auto prof3 = processor.GetLastProfilingResults();
+        total_fft_time_ms += prof3.fft_time_ms;
+        total_total_time_ms += prof3.total_time_ms;
+        
         // ═══════════════════════════════════════════════════════════════════════
         // ЧЕТВЁРТЫЙ ВЫЗОВ - повторный параллельный (кэш ресурсов)
         // ═══════════════════════════════════════════════════════════════════════
@@ -327,9 +371,29 @@ void test_process_new_large() {
         }
         std::cout << "\n✅ Четвёртый вызов (параллельный с кэшем): " << result4.results.size() << " beams processed\n";
         
-        // Вывести статистику
-        std::cout << "\n✅ Test 7 passed! All calls completed successfully\n";
-        std::cout << processor.GetProfilingStats() << "\n";
+        // Вывести профилирование четвёртого вызова
+        printer.PrintProfiling(processor.GetLastProfilingResults());
+        auto prof4 = processor.GetLastProfilingResults();
+        total_fft_time_ms += prof4.fft_time_ms;
+        total_total_time_ms += prof4.total_time_ms;
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // ИТОГОВАЯ СУММА ВРЕМЁН
+        // ═══════════════════════════════════════════════════════════════════════
+        std::cout << "\n╔═══════════════════════════════════════════════════════════════╗\n";
+        std::cout << "║  ИТОГО ПО ВСЕМ 4 ВЫЗОВАМ                                      ║\n";
+        std::cout << "╠═══════════════════════════════════════════════════════════════╣\n";
+        printf("║  Вызов 1 (ProcessNew, init):    %10.4f ms total          ║\n", prof1.total_time_ms);
+        printf("║  Вызов 2 (ProcessNew, cached):  %10.4f ms total          ║\n", prof2.total_time_ms);
+        printf("║  Вызов 3 (Parallel, init):      %10.4f ms total          ║\n", prof3.total_time_ms);
+        printf("║  Вызов 4 (Parallel, cached):    %10.4f ms total          ║\n", prof4.total_time_ms);
+        std::cout << "╠═══════════════════════════════════════════════════════════════╣\n";
+        printf("║  Сумма GPU времени (FFT):       %10.4f ms                ║\n", total_fft_time_ms);
+        printf("║  Сумма полного времени:         %10.4f ms                ║\n", total_total_time_ms);
+        printf("║  Сумма полного времени:         %10.4f sec               ║\n", total_total_time_ms / 1000.0);
+        std::cout << "╚═══════════════════════════════════════════════════════════════╝\n\n";
+        
+        std::cout << "✅ Test 7 passed! All calls completed successfully\n\n";
         
     } catch (const std::exception& e) {
         std::cerr << "❌ Test 7 failed: " << e.what() << "\n";
@@ -345,7 +409,7 @@ void run_all_tests() {
     
     try {
         // Основные тесты
-        test_basic_with_generator();
+//        test_basic_with_generator();
 //        test_nfft_calculation();
 //        test_maxima_search();
 //        test_profiling();
@@ -353,7 +417,7 @@ void run_all_tests() {
         
         // Тесты ProcessNew() с автоматическим выбором стратегии
 //        test_process_new_small();
-//        test_process_new_large();
+        test_process_new_large();
         
         std::cout << "\n";
         std::cout << "╔═══════════════════════════════════════════════════════════╗\n";

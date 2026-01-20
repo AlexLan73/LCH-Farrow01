@@ -433,8 +433,9 @@ private:
     std::unique_ptr<gpu::GPUMemoryBuffer> batch_fft_input_;     // FFT input buffer
     std::unique_ptr<gpu::GPUMemoryBuffer> batch_fft_output_;    // FFT output buffer
     std::unique_ptr<gpu::GPUMemoryBuffer> batch_input_buffer_;  // Input copy buffer
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_complex_;   // Selected complex output
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_magnitude_; // Selected magnitude output
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_complex_;   // Selected complex output (DEPRECATED)
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_magnitude_; // Selected magnitude output (DEPRECATED)
+    std::unique_ptr<gpu::GPUMemoryBuffer> batch_maxima_;        // MaxValue output для unified kernel
     size_t batch_buffers_size_;                                  // Текущий размер буферов (num_beams)
     
     // Кэшируемый FFT план для batch processing
@@ -449,8 +450,9 @@ private:
     struct ParallelResources {
         std::unique_ptr<gpu::GPUMemoryBuffer> fft_input;      // FFT input buffer
         std::unique_ptr<gpu::GPUMemoryBuffer> fft_output;     // FFT output buffer
-        std::unique_ptr<gpu::GPUMemoryBuffer> sel_complex;    // Selected complex output
-        std::unique_ptr<gpu::GPUMemoryBuffer> sel_magnitude;  // Selected magnitude output
+        std::unique_ptr<gpu::GPUMemoryBuffer> sel_complex;    // (DEPRECATED)
+        std::unique_ptr<gpu::GPUMemoryBuffer> sel_magnitude;  // (DEPRECATED)
+        std::unique_ptr<gpu::GPUMemoryBuffer> maxima;         // MaxValue output для unified kernel
         clfftPlanHandle plan_handle = 0;                       // FFT план для этого потока
         cl_command_queue queue = nullptr;                      // Command queue для этого потока
         bool initialized = false;
@@ -462,8 +464,8 @@ private:
     
     // Конфигурация batch processing
     struct BatchConfig {
-        double memory_usage_limit = 0.6;    // 60% от доступной памяти
-        double batch_size_ratio = 0.1;      // 10% лучей на батч
+        double memory_usage_limit = 0.65;    // 60% от доступной памяти
+        double batch_size_ratio = 0.22;      // 10% лучей на батч
         size_t min_beams_for_batch = 10;    // Минимум лучей для batch режима
         size_t num_parallel_streams = 3;    // 3 параллельных потока
     };

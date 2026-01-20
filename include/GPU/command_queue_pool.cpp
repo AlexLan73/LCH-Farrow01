@@ -203,7 +203,7 @@ void CommandQueuePool::CreateQueues(size_t num_queues) {
         }
         
         queues_.push_back(queue);
-        std::cout << "[CommandQueuePool] Created queue[" << i << "]\n";
+//        std::cout << "[CommandQueuePool] Created queue[" << i << "]\n";
     }
 }
 
