@@ -13,11 +13,11 @@
 
 
 int main(int argc, char* argv[]) {
-    
+
     // Запуск тестов Antenna FFT
-    test_antenna_fft_proc_max::run_all_tests();
-    
-    return 0;
+   test_antenna_fft_proc_max::run_all_tests();
+
+  return 0;
 }
 
 /**

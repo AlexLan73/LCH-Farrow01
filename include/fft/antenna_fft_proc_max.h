@@ -250,6 +250,21 @@ private:
     );
     
     /**
+     * @brief Выполнить поиск максимумов на GPU с заданными буферами
+     * @param selected_complex Буфер с комплексными данными (selected points)
+     * @param selected_magnitude Буфер с магнитудами (selected points)
+     * @param search_range Количество точек для поиска (out_count_points_fft)
+     * @param wait_event Событие для ожидания перед запуском (может быть nullptr)
+     * @return Вектор FFTMaxResult с найденными максимумами и фазами
+     */
+    std::vector<std::vector<FFTMaxResult>> FindMaximaAllBeamsOnGPU(
+        cl_mem selected_complex, 
+        cl_mem selected_magnitude, 
+        size_t search_range,
+        cl_event wait_event = nullptr
+    );
+    
+    /**
      * @brief Профилировать событие OpenCL
      * @param event Событие OpenCL
      * @param operation_name Название операции

@@ -22,10 +22,10 @@ void test_basic_with_generator() {
         // ═══════════════════════════════════════════════════════════════════
         // ПАРАМЕТРЫ ТЕСТА
         // ═══════════════════════════════════════════════════════════════════
-        const size_t NUM_BEAMS = 56;
-        const size_t COUNT_POINTS = 130000;
-        const size_t OUT_COUNT_POINTS_FFT = 100;
-        const size_t MAX_PEAKS_COUNT = 3;
+        const size_t NUM_BEAMS = 80;
+        const size_t COUNT_POINTS = 1300000;
+        const size_t OUT_COUNT_POINTS_FFT = 1000;
+        const size_t MAX_PEAKS_COUNT = 5;
         
         std::cout << "  ┌─────────────────────────────────────────────────────────────┐\n";
         std::cout << "  │  ПАРАМЕТРЫ ТЕСТА                                            │\n";
@@ -345,15 +345,15 @@ void run_all_tests() {
     
     try {
         // Основные тесты
-//        test_basic_with_generator();
+        test_basic_with_generator();
 //        test_nfft_calculation();
 //        test_maxima_search();
 //        test_profiling();
 //        test_output();
         
         // Тесты ProcessNew() с автоматическим выбором стратегии
-        test_process_new_small();
-        test_process_new_large();
+//        test_process_new_small();
+//        test_process_new_large();
         
         std::cout << "\n";
         std::cout << "╔═══════════════════════════════════════════════════════════╗\n";

@@ -335,7 +335,7 @@ std::string OpenCLCore::GetSVMInfo() const {
         << ((svm_caps & CL_DEVICE_SVM_ATOMICS) ? "YES ✅" : "NO ❌") << "\n";
     
     oss << "\n" << std::string(60, '═') << "\n";
-    
+
     return oss.str();
 }
 
