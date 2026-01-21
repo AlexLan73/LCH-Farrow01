@@ -42,23 +42,24 @@ message(STATUS "🔨 Creating main executable: LCH-Farrow1")
 # ЛИНКОВКА БИБЛИОТЕК И МОДУЛЕЙ
 # ============================================================================
 
-# Линкуем все наши библиотеки и модули
+# ВАЖНО: Для статических библиотек порядок критичен!
+# Сначала наши библиотеки, потом внешние зависимости (clFFT, OpenCL)
 target_link_libraries(LCH-Farrow1 PRIVATE
-    # Наши библиотеки
-    lfm_opencl_manager      # OpenCL Manager (STATIC)
-    lfm_gpu                 # GPU Module (INTERFACE/header-only)
-    lfm_tests               # Tests Module (INTERFACE/header-only)
-    
-    # Внешние зависимости
-    OpenCL::OpenCL
+    # Наши библиотеки (порядок: от высокоуровневых к низкоуровневым)
+    lfm_tests               # Tests Module (STATIC) - использует lfm_gpu
+    lfm_gpu                 # GPU Module (STATIC) - использует lfm_opencl_manager
+    lfm_opencl_manager      # OpenCL Manager (STATIC) - использует OpenCL/clFFT
 )
 
-# Линкуем clFFT если найдена
+# clFFT ДОЛЖЕН быть ПОСЛЕ наших библиотек (статическая линковка)
 if(CLFFT_FOUND)
     target_link_libraries(LCH-Farrow1 PRIVATE "${CLFFT_LIB}")
 endif()
 
-# Линкуем nlohmann_json если найдена
+# OpenCL ДОЛЖЕН быть последним
+target_link_libraries(LCH-Farrow1 PRIVATE OpenCL::OpenCL)
+
+# nlohmann_json
 if(NLOHMANN_JSON_FOUND)
     target_link_libraries(LCH-Farrow1 PRIVATE nlohmann_json::nlohmann_json)
 endif()

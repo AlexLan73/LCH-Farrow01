@@ -15,8 +15,15 @@ message(STATUS "")
 # ============================================================================
 
 set(OPENCL_MANAGER_SOURCES
+    # Из src/ManagerOpenCL/
     opencl_manager.cpp
     gpu_memory_manager.cpp
+    
+    # Из include/ManagerOpenCL/ (реализации классов)
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL/opencl_core.cpp
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL/opencl_compute_engine.cpp
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL/command_queue_pool.cpp
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL/kernel_program.cpp
 )
 
 # ============================================================================
@@ -47,6 +54,7 @@ target_include_directories(lfm_opencl_manager PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL
     ${CMAKE_SOURCE_DIR}/include/interface
+    ${CMAKE_SOURCE_DIR}/clFFT/include        # Локальный clFFT с inline функциями
 )
 
 target_include_directories(lfm_opencl_manager PRIVATE

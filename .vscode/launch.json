@@ -5,7 +5,7 @@
             "name": "Debug LCH-Farrow1 (Linux)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/LCH-Farrow1",
+            "program": "${workspaceFolder}/build/linux-nvidia-debug/src/LCH-Farrow1",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

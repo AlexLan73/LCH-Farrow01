@@ -7,7 +7,8 @@
             "command": "cmake",
             "args": [
                 "--build",
-                "${workspaceFolder}/build"
+                "${workspaceFolder}/build/linux-nvidia-debug",
+                "-j8"
             ],
             "group": {
                 "kind": "build",
@@ -30,7 +31,7 @@
             "command": "cmake",
             "args": [
                 "--build",
-                "${workspaceFolder}/build",
+                "${workspaceFolder}/build/linux-nvidia-debug",
                 "-j8"
             ],
             "group": "build",
@@ -43,17 +44,15 @@
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Сборка для Linux (использует CMAKE_BUILD_TYPE из конфигурации)"
+            "detail": "Сборка для Linux (Debug с OpenCL)"
         },
         {
             "label": "configure",
             "type": "shell",
             "command": "cmake",
             "args": [
-                "-B",
-                "${workspaceFolder}/build",
-                "-DCMAKE_BUILD_TYPE=Debug",
-                "-DENABLE_OPENCL=ON"
+                "--preset",
+                "linux-nvidia-debug"
             ],
             "group": "build",
             "presentation": {
@@ -63,7 +62,7 @@
                 "clear": true
             },
             "problemMatcher": [],
-            "detail": "Конфигурация CMake"
+            "detail": "Конфигурация CMake с preset linux-nvidia-debug"
         },
         {
             "label": "clean",
@@ -71,7 +70,7 @@
             "command": "rm",
             "args": [
                 "-rf",
-                "${workspaceFolder}/build"
+                "${workspaceFolder}/build/linux-nvidia-debug"
             ],
             "group": "build",
             "presentation": {
@@ -81,7 +80,7 @@
                 "clear": true
             },
             "problemMatcher": [],
-            "detail": "Очистка директории build"
+            "detail": "Очистка директории build/linux-nvidia-debug"
         },
         {
             "label": "rebuild",
