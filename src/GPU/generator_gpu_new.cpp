@@ -1,10 +1,10 @@
-#include "generator/generator_gpu_new.h"
+#include "GPU/generator_gpu_new.h"
 
 // Включаем компоненты новой архитектуры
-#include "GPU/opencl_compute_engine.hpp"
-#include "GPU/kernel_program.hpp"
-#include "GPU/command_queue_pool.hpp"
-#include "GPU/opencl_core.hpp"
+#include "ManagerOpenCL/opencl_compute_engine.hpp"
+#include "ManagerOpenCL/kernel_program.hpp"
+#include "ManagerOpenCL/command_queue_pool.hpp"
+#include "ManagerOpenCL/opencl_core.hpp"
 
 // Параметры сигнала
 #include "interface/lfm_parameters.h"

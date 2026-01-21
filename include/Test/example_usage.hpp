@@ -1,14 +1,15 @@
+
 #include <iostream>
 #include <vector>
 #include <complex>
 
 // Новая архитектура
-#include "GPU/opencl_core.hpp"
-#include "GPU/command_queue_pool.hpp"
-#include "GPU/opencl_compute_engine.hpp"
+#include "ManagerOpenCL/opencl_core.hpp"
+#include "ManagerOpenCL/command_queue_pool.hpp"
+#include "ManagerOpenCL/opencl_compute_engine.hpp"
 
 // Генератор
-#include "generator/generator_gpu_new.h"
+#include "GPU/generator_gpu_new.h"
 #include "interface/lfm_parameters.h"
 #include "interface/DelayParameter.h"
 

@@ -4,7 +4,7 @@
 #include <vector>
 #include <complex>
 #include <CL/cl.h>
-#include "generator/generator_gpu_new.h"
+#include "GPU/generator_gpu_new.h"
 #include "interface/lfm_parameters.h"
 
 /**

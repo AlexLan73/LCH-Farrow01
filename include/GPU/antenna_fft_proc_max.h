@@ -1,10 +1,10 @@
 #pragma once
 
 #include "interface/antenna_fft_params.h"
-#include "GPU/opencl_compute_engine.hpp"
-#include "GPU/opencl_core.hpp"
-#include "GPU/command_queue_pool.hpp"
-#include "GPU/gpu_memory_buffer.hpp"
+#include "ManagerOpenCL/opencl_compute_engine.hpp"
+#include "ManagerOpenCL/opencl_core.hpp"
+#include "ManagerOpenCL/command_queue_pool.hpp"
+#include "ManagerOpenCL/gpu_memory_buffer.hpp"
 #include <CL/cl.h>
 #include <clFFT.h>
 #include <memory>

@@ -20,7 +20,7 @@ Makefile
 ################################################################################
 CMakePresets.json
 CMakeUserPresets.json
-CMakeLists.txt
+#CMakeLists.txt
 
 # IDE
 .vscode/

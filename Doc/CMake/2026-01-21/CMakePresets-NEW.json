@@ -1,0 +1,112 @@
+{
+  "version": 3,
+  "vendor": {
+    "lch-farrow": {
+      "autoFormat": true
+    }
+  },
+  "configurePresets": [
+    {
+      "name": "linux-rocm-opencl",
+      "displayName": "Linux with ROCm/OpenCL (AMD GPU)",
+      "description": "Ubuntu/Linux configuration with ROCm and OpenCL support",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-rocm",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "g++",
+        "ENABLE_CUDA": "OFF",
+        "ENABLE_OPENCL": "ON",
+        "TYPE_GPU": "AMD-GPU",
+        "CUDA_ARCH": "auto"
+      },
+      "environment": {
+        "ROCM_HOME": "/opt/rocm",
+        "LD_LIBRARY_PATH": "/opt/rocm/lib:$penv{LD_LIBRARY_PATH}",
+        "PATH": "/opt/rocm/bin:$penv{PATH}"
+      }
+    },
+    {
+      "name": "linux-rocm-debug",
+      "displayName": "Linux with ROCm/OpenCL (Debug)",
+      "description": "Ubuntu/Linux Debug build with ROCm",
+      "inherits": "linux-rocm-opencl",
+      "binaryDir": "${sourceDir}/build/linux-rocm-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-cuda",
+      "displayName": "Linux with CUDA (NVIDIA GPU)",
+      "description": "Ubuntu/Linux configuration with CUDA support",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-cuda",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "g++",
+        "ENABLE_CUDA": "ON",
+        "ENABLE_OPENCL": "OFF",
+        "TYPE_GPU": "NVIDIA-GPU",
+        "CUDA_ARCH": "75"
+      },
+      "environment": {
+        "CUDA_HOME": "/usr/local/cuda",
+        "LD_LIBRARY_PATH": "/usr/local/cuda/lib64:$penv{LD_LIBRARY_PATH}",
+        "PATH": "/usr/local/cuda/bin:$penv{PATH}"
+      }
+    },
+    {
+      "name": "windows-cuda",
+      "displayName": "Windows with CUDA (Visual Studio)",
+      "description": "Windows configuration with CUDA support",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/windows-cuda",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_CUDA": "ON",
+        "ENABLE_OPENCL": "OFF",
+        "TYPE_GPU": "NVIDIA-RTX",
+        "CUDA_ARCH": "89",
+        "CUDA_TOOLKIT_ROOT_DIR": "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.0"
+      }
+    },
+    {
+      "name": "windows-opencl",
+      "displayName": "Windows with OpenCL (Visual Studio)",
+      "description": "Windows configuration with local clFFT",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/windows-opencl",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_CUDA": "OFF",
+        "ENABLE_OPENCL": "ON",
+        "TYPE_GPU": "GPU",
+        "CUSTOM_OPENCL_PATH": "C:/Program Files/NVIDIA/CUDA/v12.0"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-rocm-release",
+      "configurePreset": "linux-rocm-opencl",
+      "inheritConfigureEnvironment": true,
+      "jobs": 8,
+      "targets": []
+    },
+    {
+      "name": "linux-rocm-debug-build",
+      "configurePreset": "linux-rocm-debug",
+      "inheritConfigureEnvironment": true,
+      "jobs": 4,
+      "targets": []
+    },
+    {
+      "name": "windows-cuda-release",
+      "configurePreset": "windows-cuda",
+      "configuration": "Release",
+      "jobs": 8,
+      "targets": []
+    }
+  ]
+}

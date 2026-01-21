@@ -3,10 +3,10 @@
 #include <iostream>
 #include <vector>
 #include <complex>
-#include "fft/antenna_fft_proc_max.h"
-#include "generator/generator_gpu_new.h"
+#include "GPU/antenna_fft_proc_max.h"
+#include "GPU/generator_gpu_new.h"
 #include "interface/lfm_parameters.h"
-#include "GPU/opencl_compute_engine.hpp"
+#include "ManagerOpenCL/opencl_compute_engine.hpp"
 
 /**
  * @brief Тесты для AntennaFFTProcMax

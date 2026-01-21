@@ -1,0 +1,104 @@
+# ============================================================================
+# Test Module CMakeLists
+# src/Test/CMakeLists.txt
+# ============================================================================
+# НАЗНАЧЕНИЕ: Создание OBJECT библиотеки для тестов и примеров
+# ВАЖНО: Это OBJECT библиотека - исходники будут скомпилированы в main исполняемый файл
+# ============================================================================
+
+message(STATUS "")
+message(STATUS "🔧 Processing: src/Test/")
+message(STATUS "")
+
+# ============================================================================
+# ИСХОДНЫЕ ФАЙЛЫ ТЕСТОВ
+# ============================================================================
+
+set(TEST_MODULE_SOURCES
+    antenna_fft_proc_max_test.cpp
+)
+
+# ============================================================================
+# ЗАГОЛОВОЧНЫЕ ФАЙЛЫ (для зависимостей)
+# ============================================================================
+
+set(TEST_MODULE_HEADERS
+    ${CMAKE_SOURCE_DIR}/include/Test/antenna_fft_proc_max_test.hpp
+    ${CMAKE_SOURCE_DIR}/include/Test/example_usage.hpp
+)
+
+# ============================================================================
+# СОЗДАНИЕ OBJECT БИБЛИОТЕКИ
+# ============================================================================
+
+add_library(lfm_tests OBJECT
+    ${TEST_MODULE_SOURCES}
+    ${TEST_MODULE_HEADERS}
+)
+
+message(STATUS "✅ Created object library: lfm_tests")
+
+# ============================================================================
+# ПОДКЛЮЧЕНИЕ INCLUDE ДИРЕКТОРИЙ
+# ============================================================================
+
+target_include_directories(lfm_tests PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/Test
+    ${CMAKE_SOURCE_DIR}/include/GPU
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL
+    ${CMAKE_SOURCE_DIR}/include/interface
+    ${CMAKE_SOURCE_DIR}/include/radar
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_include_directories(lfm_tests PRIVATE
+    ${OpenCL_INCLUDE_DIRS}
+)
+
+# ============================================================================
+# ЛИНКОВКА ЗАВИСИМОСТЕЙ
+# ============================================================================
+
+# Зависит от GPU и ManagerOpenCL
+target_link_libraries(lfm_tests PUBLIC
+    lfm_gpu
+    lfm_opencl_manager
+    OpenCL::OpenCL
+)
+
+# clFFT если найдена
+if(CLFFT_FOUND)
+    target_link_libraries(lfm_tests PUBLIC "${CLFFT_LIB}")
+    target_include_directories(lfm_tests PUBLIC "${CLFFT_INCLUDE_DIR}")
+endif()
+
+# nlohmann_json если найдена
+if(NLOHMANN_JSON_FOUND)
+    target_link_libraries(lfm_tests PUBLIC nlohmann_json::nlohmann_json)
+endif()
+
+# ============================================================================
+# COMPILER FLAGS
+# ============================================================================
+
+if(MSVC)
+    target_compile_options(lfm_tests PRIVATE /arch:AVX2 /Gy)
+else()
+    target_compile_options(lfm_tests PRIVATE -march=native)
+endif()
+
+# ============================================================================
+# COMPILE DEFINITIONS
+# ============================================================================
+
+target_compile_definitions(lfm_tests PUBLIC
+    TEST_MODULE_ENABLED=1
+    OPENCL_ENABLED=1
+    GPU_MODULE_ENABLED=1
+    CL_TARGET_OPENCL_VERSION=300
+)
+
+message(STATUS "✅ Test module configured")
+message(STATUS "   Depends on: lfm_gpu, lfm_opencl_manager")
+message(STATUS "")

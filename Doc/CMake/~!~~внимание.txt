@@ -1,0 +1,23 @@
+project/
+├── CMakeLists.txt (главный - МИНИМАЛЬНЫЙ, только include других)
+├── cmake/
+│   ├── compiler-options.cmake (флаги компилятора)
+│   ├── dependencies.cmake (поиск OpenCL, clFFT, nlohmann_json)
+│   ├── platform-detection.cmake (определение OS)
+│   ├── gpu-config.cmake (GPU конфигурация)
+│   └── debug-config.cmake (логирование)
+├── CMakePresets.json (ТОЛЬКО для локальных путей)
+├── src/
+│   ├── CMakeLists.txt (главный источник)
+│   ├── GPU/
+│   │   └── CMakeLists.txt (GPU компоненты)
+│   ├── ManagerOpenCL/
+│   │   └── CMakeLists.txt (отдельная библиотека!)
+│   ├── Test/
+│   │   └── CMakeLists.txt (тесты)
+│   └── main.cpp
+└── include/
+    ├── GPU/
+    ├── ManagerOpenCL/
+    ├── interface/
+    └── ...

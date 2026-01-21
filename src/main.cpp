@@ -2,14 +2,14 @@
 #include <string>
 
 #include <CL/cl.h>
-#include "GPU/opencl_compute_engine.hpp"
+#include "ManagerOpenCL/opencl_compute_engine.hpp"
 #include "Test/example_usage.hpp"
 //#include "Test/example_signal_basic_lfm.hpp"
 //#include "Test/example_signal_delayed_lfm.hpp"
 //#include "Test/example_signal_combined_delays.hpp"
 //#include "Test/test_signal_sinusoids.hpp"
-//#include "Test/test_antenna_fft_proc_max.hpp"
-#include "Farrow/lagrange_matrix_loader.hpp"
+#include "Test/test_antenna_fft_proc_max.hpp"
+#include "GPU/lagrange_matrix_loader.hpp"
 
 
 int main(int argc, char* argv[]) {
@@ -34,6 +34,9 @@ int main(int argc, char* argv[]) {
     catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
     }
+
+     // Запуск тестов Antenna FFT
+   test_antenna_fft_proc_max::run_all_tests();
 
 
   return 0;

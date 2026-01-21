@@ -1,8 +1,8 @@
-#include "fft/antenna_fft_proc_max.h"
-#include "GPU/opencl_compute_engine.hpp"
-#include "GPU/opencl_core.hpp"
-#include "GPU/command_queue_pool.hpp"
-#include "GPU/kernel_program.hpp"
+#include "GPU/antenna_fft_proc_max.h"
+#include "ManagerOpenCL/opencl_compute_engine.hpp"
+#include "ManagerOpenCL/opencl_core.hpp"
+#include "ManagerOpenCL/command_queue_pool.hpp"
+#include "ManagerOpenCL/kernel_program.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>

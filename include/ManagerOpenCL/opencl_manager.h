@@ -14,7 +14,7 @@ namespace gpu {
 }
 
 // Полное определение MemoryType нужно для параметров по умолчанию
-#include "GPU/memory_type.hpp"
+#include "ManagerOpenCL/memory_type.hpp"
 
 namespace gpu {
 

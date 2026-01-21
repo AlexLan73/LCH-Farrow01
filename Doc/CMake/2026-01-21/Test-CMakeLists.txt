@@ -1,0 +1,90 @@
+# ============================================================================
+# Test Module CMakeLists
+# src/Test/CMakeLists.txt
+# ============================================================================
+# НАЗНАЧЕНИЕ: Компиляция тестов и примеров
+# ============================================================================
+
+message(STATUS "")
+message(STATUS "🧪 Processing: src/Test/")
+message(STATUS "")
+
+# ============================================================================
+# ИСХОДНЫЕ ФАЙЛЫ ТЕСТОВ
+# ============================================================================
+
+set(TEST_SOURCES
+    test_antenna_fft_proc_max.cpp
+    test_signal_sinusoids.cpp
+)
+
+# ============================================================================
+# ЗАГОЛОВОЧНЫЕ ФАЙЛЫ ТЕСТОВ
+# ============================================================================
+
+set(TEST_HEADERS
+    ${CMAKE_SOURCE_DIR}/include/Test/example_signal_combined_delays.hpp
+    ${CMAKE_SOURCE_DIR}/include/Test/example_usage.hpp
+    ${CMAKE_SOURCE_DIR}/include/Test/test_antenna_fft_proc_max.hpp
+    ${CMAKE_SOURCE_DIR}/include/Test/test_hybrid_buffer.hpp
+    ${CMAKE_SOURCE_DIR}/include/Test/test_signal_sinusoids.hpp
+)
+
+# ============================================================================
+# СОЗДАНИЕ ОБЪЕКТНОЙ БИБЛИОТЕКИ ТЕСТОВ
+# ============================================================================
+
+add_library(lfm_tests OBJECT
+    ${TEST_SOURCES}
+    ${TEST_HEADERS}
+)
+
+message(STATUS "✅ Created test library: lfm_tests")
+
+# ============================================================================
+# ПОДКЛЮЧЕНИЕ INCLUDE ДИРЕКТОРИЙ
+# ============================================================================
+
+target_include_directories(lfm_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/Test
+    ${CMAKE_SOURCE_DIR}/include/GPU
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL
+    ${CMAKE_SOURCE_DIR}/include/interface
+)
+
+# ============================================================================
+# ЗАВИСИМОСТИ
+# ============================================================================
+
+if(OPENCL_ENABLED)
+    target_link_libraries(lfm_tests PRIVATE
+        lfm_opencl_manager
+        OpenCL::OpenCL
+    )
+    
+    if(CLFFT_FOUND)
+        target_link_libraries(lfm_tests PRIVATE "${CLFFT_LIB}")
+    endif()
+endif()
+
+# ============================================================================
+# COMPILER FLAGS
+# ============================================================================
+
+if(MSVC)
+    target_compile_options(lfm_tests PRIVATE /arch:AVX2)
+else()
+    target_compile_options(lfm_tests PRIVATE -march=native)
+endif()
+
+# ============================================================================
+# COMPILE DEFINITIONS
+# ============================================================================
+
+if(OPENCL_ENABLED)
+    target_compile_definitions(lfm_tests PRIVATE OPENCL_ENABLED=1)
+endif()
+
+message(STATUS "✅ Test module configured")
+message(STATUS "")

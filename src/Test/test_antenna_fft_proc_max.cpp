@@ -1,9 +1,9 @@
 #include "Test/test_antenna_fft_proc_max.hpp"
-#include "fft/antenna_fft_proc_max.h"
-#include "fft/fft_result_printer.hpp"  // Новый класс для вывода
-#include "generator/generator_gpu_new.h"
+#include "GPU/antenna_fft_proc_max.h"
+#include "GPU/fft_result_printer.hpp"  // Новый класс для вывода
+#include "GPU/generator_gpu_new.h"
 #include "interface/lfm_parameters.h"
-#include "GPU/opencl_compute_engine.hpp"
+#include "ManagerOpenCL/opencl_compute_engine.hpp"
 #include <iostream>
 #include <iomanip>
 

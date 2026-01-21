@@ -1,8 +1,8 @@
 #pragma once
 
-#include "GPU/opencl_manager.h"
-#include "GPU/memory_type.hpp"
-#include "GPU/gpu_memory_buffer.hpp"
+#include "ManagerOpenCL/opencl_manager.h"
+#include "ManagerOpenCL/memory_type.hpp"
+#include "ManagerOpenCL/gpu_memory_buffer.hpp"
 #include <memory>
 #include <vector>
 #include <complex>

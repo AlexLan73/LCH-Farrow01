@@ -1,0 +1,186 @@
+# ============================================================================
+# Source Directory CMakeLists
+# src/CMakeLists.txt
+# ============================================================================
+# НАЗНАЧЕНИЕ: Главная сборка приложения и подключение подмодулей
+# ============================================================================
+
+message(STATUS "")
+message(STATUS "📦 Processing: src/")
+message(STATUS "")
+
+# ============================================================================
+# ДОБАВЛЕНИЕ ПОДМОДУЛЕЙ (модульная сборка)
+# ============================================================================
+
+# 1. Библиотека ManagerOpenCL (должна быть первой, нужна для других модулей)
+if(OPENCL_ENABLED)
+    add_subdirectory(ManagerOpenCL)
+endif()
+
+# 2. GPU модуль (использует ManagerOpenCL)
+if(OPENCL_ENABLED)
+    add_subdirectory(GPU)
+endif()
+
+# 3. Тесты (опционально)
+add_subdirectory(Test)
+
+# ============================================================================
+# ГЛАВНЫЙ ИСПОЛНЯЕМЫЙ ФАЙЛ
+# ============================================================================
+
+message(STATUS "📋 Creating main executable: ${PROJECT_NAME}")
+
+set(MAIN_SOURCES
+    main.cpp
+)
+
+# Если OpenCL включена, добавляем GPU-специфичные источники
+if(OPENCL_ENABLED)
+    list(APPEND MAIN_SOURCES
+        # GPU-специфичные файлы будут подключены через include директории
+        # и зависимости от библиотек ниже
+    )
+endif()
+
+# Создаём исполняемый файл
+add_executable(${PROJECT_NAME} ${MAIN_SOURCES})
+
+# ============================================================================
+# ПОДКЛЮЧЕНИЕ INCLUDE ДИРЕКТОРИЙ
+# ============================================================================
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/GPU
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL
+    ${CMAKE_SOURCE_DIR}/include/interface
+)
+
+# ============================================================================
+# ЛИНКОВКА БИБЛИОТЕК
+# ============================================================================
+
+# Подключаем ManagerOpenCL библиотеку (если она скомпилирована)
+if(OPENCL_ENABLED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        lfm_opencl_manager
+    )
+    message(STATUS "✅ Linked library: lfm_opencl_manager")
+endif()
+
+# ============================================================================
+# OPENCL & RELATED LIBRARIES
+# ============================================================================
+
+if(OPENCL_ENABLED)
+    # OpenCL
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenCL::OpenCL)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${OpenCL_INCLUDE_DIRS})
+    target_compile_definitions(${PROJECT_NAME} PRIVATE OPENCL_ENABLED=1)
+    message(STATUS "✅ Linked: OpenCL")
+    
+    # clFFT
+    if(CLFFT_FOUND)
+        target_link_libraries(${PROJECT_NAME} PRIVATE "${CLFFT_LIB}")
+        target_include_directories(${PROJECT_NAME} PRIVATE "${CLFFT_INCLUDE_DIR}")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE CLFFT_FOUND=1)
+        message(STATUS "✅ Linked: clFFT")
+        
+        # Copy DLL on Windows
+        if(IS_WINDOWS AND CLFFT_DLL)
+            add_custom_command(
+                TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CLFFT_DLL}"
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+                COMMENT "📋 Copying clFFT.dll to output directory"
+            )
+        endif()
+    else()
+        target_compile_definitions(${PROJECT_NAME} PRIVATE CLFFT_FOUND=0)
+        message(WARNING "⚠️  clFFT not available - some features may be disabled")
+    endif()
+    
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE 
+        OPENCL_ENABLED=0
+        CLFFT_FOUND=0
+    )
+endif()
+
+# ============================================================================
+# CUDA (если включена)
+# ============================================================================
+
+if(CUDA_ENABLED)
+    enable_language(CUDA)
+    set(CMAKE_CUDA_STANDARD 17)
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+    
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${CUDA_LIBRARIES})
+    target_include_directories(${PROJECT_NAME} PRIVATE ${CUDA_INCLUDE_DIRS})
+    target_compile_definitions(${PROJECT_NAME} PRIVATE CUDA_ENABLED=1)
+    
+    if(NOT CUDA_ARCH STREQUAL "auto")
+        set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCH}")
+    endif()
+    
+    message(STATUS "✅ Linked: CUDA")
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE CUDA_ENABLED=0)
+endif()
+
+# ============================================================================
+# nlohmann_json (Linux only)
+# ============================================================================
+
+if(IS_LINUX AND NLOHMANN_JSON_FOUND)
+    target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
+    message(STATUS "✅ Linked: nlohmann_json")
+endif()
+
+# ============================================================================
+# STANDARD LIBRARIES
+# ============================================================================
+
+if(NOT MSVC)
+    target_link_libraries(${PROJECT_NAME} PRIVATE m)
+endif()
+
+# ============================================================================
+# COMPILER FLAGS
+# ============================================================================
+
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /arch:AVX2 /Gy /fp:precise)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -march=native)
+endif()
+
+# ============================================================================
+# KERNEL DIRECTORY (для поиска .cl файлов в runtime)
+# ============================================================================
+
+set(OPENCL_KERNEL_DIR "${CMAKE_SOURCE_DIR}/kernels")
+target_compile_definitions(${PROJECT_NAME} PRIVATE 
+    OPENCL_KERNEL_DIR="${OPENCL_KERNEL_DIR}"
+)
+
+# ============================================================================
+# COPY RESOURCES
+# ============================================================================
+
+# Копируем JSON файл с параметрами Лагранжа
+if(EXISTS "${CMAKE_SOURCE_DIR}/include/GPU/lagrange_matrix.json")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_SOURCE_DIR}/include/GPU/lagrange_matrix.json"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/lagrange_matrix.json"
+        COMMENT "📋 Copying lagrange_matrix.json"
+    )
+endif()
+
+message(STATUS "✅ Main executable configured: ${PROJECT_NAME}")
+message(STATUS "")

@@ -1,0 +1,93 @@
+# ============================================================================
+# GPU Module CMakeLists
+# src/GPU/CMakeLists.txt
+# ============================================================================
+# НАЗНАЧЕНИЕ: Создание OBJECT библиотеки для GPU модуля
+# ВАЖНО: Это OBJECT библиотека - исходники будут скомпилированы в main исполняемый файл
+# ============================================================================
+
+message(STATUS "")
+message(STATUS "🔧 Processing: src/GPU/")
+message(STATUS "")
+
+# ============================================================================
+# ИСХОДНЫЕ ФАЙЛЫ GPU МОДУЛЯ
+# ============================================================================
+
+set(GPU_MODULE_SOURCES
+    opencl_compute_engine.cpp
+)
+
+# ============================================================================
+# ЗАГОЛОВОЧНЫЕ ФАЙЛЫ (для зависимостей)
+# ============================================================================
+
+set(GPU_MODULE_HEADERS
+    ${CMAKE_SOURCE_DIR}/include/GPU/opencl_compute_engine.hpp
+)
+
+# ============================================================================
+# СОЗДАНИЕ OBJECT БИБЛИОТЕКИ
+# ============================================================================
+
+add_library(lfm_gpu OBJECT
+    ${GPU_MODULE_SOURCES}
+    ${GPU_MODULE_HEADERS}
+)
+
+message(STATUS "✅ Created object library: lfm_gpu")
+
+# ============================================================================
+# ПОДКЛЮЧЕНИЕ INCLUDE ДИРЕКТОРИЙ
+# ============================================================================
+
+target_include_directories(lfm_gpu PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/GPU
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL
+    ${CMAKE_SOURCE_DIR}/include/interface
+)
+
+target_include_directories(lfm_gpu PRIVATE
+    ${OpenCL_INCLUDE_DIRS}
+)
+
+# ============================================================================
+# ЛИНКОВКА ЗАВИСИМОСТЕЙ
+# ============================================================================
+
+# Зависит от ManagerOpenCL
+target_link_libraries(lfm_gpu PUBLIC
+    lfm_opencl_manager
+    OpenCL::OpenCL
+)
+
+# clFFT если найдена
+if(CLFFT_FOUND)
+    target_link_libraries(lfm_gpu PUBLIC "${CLFFT_LIB}")
+    target_include_directories(lfm_gpu PUBLIC "${CLFFT_INCLUDE_DIR}")
+endif()
+
+# ============================================================================
+# COMPILER FLAGS
+# ============================================================================
+
+if(MSVC)
+    target_compile_options(lfm_gpu PRIVATE /arch:AVX2 /Gy)
+else()
+    target_compile_options(lfm_gpu PRIVATE -march=native)
+endif()
+
+# ============================================================================
+# COMPILE DEFINITIONS
+# ============================================================================
+
+target_compile_definitions(lfm_gpu PUBLIC
+    GPU_MODULE_ENABLED=1
+    OPENCL_ENABLED=1
+    CL_TARGET_OPENCL_VERSION=300
+)
+
+message(STATUS "✅ GPU module configured")
+message(STATUS "   Depends on: lfm_opencl_manager")
+message(STATUS "")

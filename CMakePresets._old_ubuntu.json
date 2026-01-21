@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "linux-main",
+      "description": "Linux - Main Configuration (edit parameters here)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_CUDA": "OFF",
+        "ENABLE_OPENCL": "ON",
+        "CUDA_ARCH": "89",
+        "TYPE_GPU": "RTX 3060",
+        "GPU_VENDOR": "NVIDIA"        
+      }
+    }
+  ]
+}
