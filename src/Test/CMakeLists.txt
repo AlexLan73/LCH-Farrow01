@@ -17,6 +17,7 @@ message(STATUS "")
 set(TEST_SOURCES
     test_antenna_fft_proc_max.cpp
     test_signal_sinusoids.cpp
+    test_fractional_delay_processor.cpp
 )
 
 # Создаем статическую библиотеку
@@ -71,4 +72,43 @@ target_compile_definitions(lfm_tests PUBLIC
 )
 
 message(STATUS "✅ Test module configured (STATIC library)")
+
+# ============================================================================
+# ОТДЕЛЬНЫЙ EXECUTABLE ДЛЯ ТЕСТОВ FractionalDelayProcessor
+# ============================================================================
+
+add_executable(test_fractional_delay test_fractional_delay_processor.cpp)
+
+target_include_directories(test_fractional_delay PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/Test
+    ${CMAKE_SOURCE_DIR}/include/GPU
+    ${CMAKE_SOURCE_DIR}/include/ManagerOpenCL
+    ${CMAKE_SOURCE_DIR}/include/interface
+    ${CMAKE_SOURCE_DIR}/include/radar
+    ${OpenCL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_fractional_delay PRIVATE
+    lfm_gpu
+    lfm_opencl_manager
+    OpenCL::OpenCL
+)
+
+if(CLFFT_FOUND)
+    target_link_libraries(test_fractional_delay PRIVATE "${CLFFT_LIB}")
+endif()
+
+if(NLOHMANN_JSON_FOUND)
+    target_link_libraries(test_fractional_delay PRIVATE nlohmann_json::nlohmann_json)
+endif()
+
+target_compile_definitions(test_fractional_delay PRIVATE
+    TEST_MODULE_ENABLED=1
+    OPENCL_ENABLED=1
+    GPU_MODULE_ENABLED=1
+    CL_TARGET_OPENCL_VERSION=300
+)
+
+message(STATUS "✅ Created executable: test_fractional_delay")
 message(STATUS "")

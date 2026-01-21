@@ -17,6 +17,7 @@ message(STATUS "")
 set(GPU_SOURCES
     generator_gpu_new.cpp
     antenna_fft_proc_max.cpp
+    fractional_delay_processor.cpp
 )
 
 # Создаем статическую библиотеку
