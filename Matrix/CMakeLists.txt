@@ -36,6 +36,7 @@ find_package(rocsolver REQUIRED)
 # ==============================================================================
 
 add_executable(matrix_invert matrix_invert.cpp)
+set_source_files_properties(matrix_invert.cpp PROPERTIES LANGUAGE HIP)
 
 target_link_libraries(matrix_invert PRIVATE
     hip::host
@@ -50,6 +51,9 @@ set_target_properties(matrix_invert PROPERTIES
 
 target_compile_options(matrix_invert PRIVATE
     -O3
+    -ffast-math
+    -funroll-loops
+    -ffp-contract=fast
     -Wall
     -Wextra
     -DNDEBUG
@@ -60,6 +64,7 @@ target_compile_options(matrix_invert PRIVATE
 # ==============================================================================
 
 add_executable(matrix_invert_advanced matrix_invert_advanced.cpp)
+set_source_files_properties(matrix_invert_advanced.cpp PROPERTIES LANGUAGE HIP)
 
 target_link_libraries(matrix_invert_advanced PRIVATE
     hip::host
@@ -74,6 +79,9 @@ set_target_properties(matrix_invert_advanced PROPERTIES
 
 target_compile_options(matrix_invert_advanced PRIVATE
     -O3
+    -ffast-math
+    -funroll-loops
+    -ffp-contract=fast
     -Wall
     -Wextra
     -DNDEBUG

@@ -1,10 +1,12 @@
 {
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.intelliSenseEngine": "default",
     "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
     "C_Cpp.default.cppStandard": "c++17",
     "C_Cpp.default.includePath": [
         "${workspaceFolder}/include",
         "${workspaceFolder}/include/GPU",
+        "${workspaceFolder}/include/ManagerOpenCL",
         "${workspaceFolder}/include/interface",
         "${workspaceFolder}/include/generator",
         "${workspaceFolder}/include/Test",

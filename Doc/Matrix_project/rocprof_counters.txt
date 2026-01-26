@@ -1,0 +1,46 @@
+# rocprof Hardware Counter Configuration for Matrix Inversion Profiling
+# Counters for detailed GPU performance analysis
+
+# Timing metrics
+pmc: GPUTime
+pmc: WriteSize
+pmc: FetchSize
+pmc: L1CacheHit
+pmc: L2CacheHit
+
+# Compute metrics
+pmc: VALUUtilization
+pmc: SALUUtilization
+pmc: VALUInsts
+pmc: SALUInsts
+
+# Memory metrics
+pmc: MemWriteSize
+pmc: MemReadSize
+pmc: GlobalMemoryReadSize
+pmc: GlobalMemoryWriteSize
+pmc: LDS
+
+# Cache metrics
+pmc: L1CacheReadHit
+pmc: L1CacheWriteHit
+pmc: L1CacheReadMiss
+pmc: L1CacheWriteMiss
+pmc: L2CacheReadHit
+pmc: L2CacheWriteHit
+pmc: L2CacheReadMiss
+pmc: L2CacheWriteMiss
+
+# Instruction metrics
+pmc: FlatLoadInsts
+pmc: FlatStoreInsts
+pmc: FlatAtomicInsts
+
+# Wave metrics
+pmc: Wavefronts
+pmc: VALUBusy
+pmc: SALUBusy
+
+# Atomic operations
+pmc: AtomicInsts
+pmc: AtomicBusy

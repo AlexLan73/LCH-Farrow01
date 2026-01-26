@@ -41,32 +41,28 @@ constexpr float TARGET_TIME_MS = 4.0f;  // Цель: < 4 мс
 
 using ComplexFloat = rocblas_float_complex;
 
-// Helper для создания комплексного числа
 inline ComplexFloat make_complex(float r, float i) {
-    ComplexFloat c;
-    c.x = r;
-    c.y = i;
-    return c;
+    return rocblas_float_complex{r, i};
 }
 
 inline float complex_abs(const ComplexFloat& c) {
-    return std::sqrt(c.x * c.x + c.y * c.y);
+    return std::sqrt(c.real() * c.real() + c.imag() * c.imag());
 }
 
 inline ComplexFloat complex_conj(const ComplexFloat& c) {
-    return make_complex(c.x, -c.y);
+    return make_complex(c.real(), -c.imag());
 }
 
 inline ComplexFloat complex_mul(const ComplexFloat& a, const ComplexFloat& b) {
-    return make_complex(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+    return make_complex(a.real() * b.real() - a.imag() * b.imag(), a.real() * b.imag() + a.imag() * b.real());
 }
 
 inline ComplexFloat complex_add(const ComplexFloat& a, const ComplexFloat& b) {
-    return make_complex(a.x + b.x, a.y + b.y);
+    return make_complex(a.real() + b.real(), a.imag() + b.imag());
 }
 
 inline ComplexFloat complex_sub(const ComplexFloat& a, const ComplexFloat& b) {
-    return make_complex(a.x - b.x, a.y - b.y);
+    return make_complex(a.real() - b.real(), a.imag() - b.imag());
 }
 
 // ============================================================================
@@ -152,7 +148,7 @@ void initialize_positive_definite_hermitian(std::vector<ComplexFloat>& matrix, i
             }
             if (i == j) {
                 // Добавляем n на диагональ для численной стабильности
-                sum.x += static_cast<float>(n);
+                sum = make_complex(sum.real() + static_cast<float>(n), sum.imag());
             }
             matrix[i * n + j] = sum;
             matrix[j * n + i] = complex_conj(sum);
@@ -206,7 +202,7 @@ float compute_frobenius_error(const std::vector<ComplexFloat>& A,
         for (int j = 0; j < n; ++j) {
             ComplexFloat expected = (i == j) ? make_complex(1.0f, 0.0f) : make_complex(0.0f, 0.0f);
             ComplexFloat diff = complex_sub(product[i * n + j], expected);
-            error += diff.x * diff.x + diff.y * diff.y;
+            error += diff.real() * diff.real() + diff.imag() * diff.imag();
         }
     }
     
@@ -244,17 +240,14 @@ public:
                  std::vector<ComplexFloat>& A_inv_host) {
         GPUTimer timer;
         
-        // Copy to device
-        CHECK_HIP(hipMemcpy(d_A, A_host.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice));
-        CHECK_HIP(hipDeviceSynchronize());
+        // Copy to device (async)
+        CHECK_HIP(hipMemcpyAsync(d_A, A_host.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice, nullptr));
         
         // START GPU TIMING
         timer.start();
         
-        // LU Factorization
+        // LU Factorization + Inversion
         CHECK_ROCBLAS(rocsolver_cgetrf(handle, n, n, d_A, n, d_ipiv, d_info));
-        
-        // Matrix Inversion from LU factors
         CHECK_ROCBLAS(rocsolver_cgetri(handle, n, d_A, n, d_ipiv, d_info));
         
         // STOP GPU TIMING
@@ -319,9 +312,8 @@ public:
         }
         
         // Copy to device
-        CHECK_HIP(hipMemcpy(d_A, A_host.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice));
-        CHECK_HIP(hipMemcpy(d_I, h_I.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice));
-        CHECK_HIP(hipDeviceSynchronize());
+        CHECK_HIP(hipMemcpyAsync(d_A, A_host.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice, nullptr));
+        CHECK_HIP(hipMemcpyAsync(d_I, h_I.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice, nullptr));
         
         // START GPU TIMING
         timer.start();
@@ -378,26 +370,23 @@ public:
                  std::vector<ComplexFloat>& A_inv_host) {
         GPUTimer timer;
         
-        // Copy to device
-        CHECK_HIP(hipMemcpy(d_A, A_host.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice));
-        CHECK_HIP(hipDeviceSynchronize());
+        // Copy to device (async)
+        CHECK_HIP(hipMemcpyAsync(d_A, A_host.data(), n * n * sizeof(ComplexFloat), hipMemcpyHostToDevice, nullptr));
         
-        // START GPU TIMING
+        // START GPU TIMING (hipEventRecord syncs implicitly after async ops)
         timer.start();
         
-        // Cholesky Factorization: A = L * L^H
-        CHECK_ROCBLAS(rocsolver_cpotrf(handle, rocblas_fill_upper, n, d_A, n, d_info));
-        
-        // Matrix Inversion using Cholesky factors
-        CHECK_ROCBLAS(rocsolver_cpotri(handle, rocblas_fill_upper, n, d_A, n, d_info));
+        // Cholesky Factorization + Inversion (fused in same stream)
+        CHECK_ROCBLAS(rocsolver_cpotrf(handle, rocblas_fill_lower, n, d_A, n, d_info));
+        CHECK_ROCBLAS(rocsolver_cpotri(handle, rocblas_fill_lower, n, d_A, n, d_info));
         
         // STOP GPU TIMING
         float gpu_time = timer.stop();
         
-        // Copy result back (верхний треугольник содержит результат)
+        // Copy result back (upper triangle contains result in row-major)
         CHECK_HIP(hipMemcpy(A_inv_host.data(), d_A, n * n * sizeof(ComplexFloat), hipMemcpyDeviceToHost));
         
-        // Заполняем нижний треугольник (симметрия)
+        // Fill lower triangle from upper (Hermitian symmetry)
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < i; ++j) {
                 A_inv_host[i * n + j] = complex_conj(A_inv_host[j * n + i]);

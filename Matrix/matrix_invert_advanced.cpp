@@ -32,11 +32,11 @@
 // Configuration
 // ============================================================================
 
-constexpr int MATRIX_SIZE = 341;
+constexpr int MATRIX_SIZE = 341; // 85;
 constexpr int NUM_ITERATIONS = 10;
 constexpr int WARMUP_ITERATIONS = 3;
 constexpr float TARGET_TIME_MS = 4.0f;
-constexpr int BATCH_SIZE = 100;  // Для batched операций
+constexpr int BATCH_SIZE = 100;  //4  // Для batched операций
 
 // Gauss-Jordan kernel parameters
 constexpr int GJ_BLOCK_SIZE = 256;  // Threads per block
@@ -48,36 +48,33 @@ constexpr int GJ_BLOCK_SIZE = 256;  // Threads per block
 using ComplexFloat = rocblas_float_complex;
 
 inline ComplexFloat make_complex(float r, float i) {
-    ComplexFloat c;
-    c.x = r;
-    c.y = i;
-    return c;
+    return rocblas_float_complex{r, i};
 }
 
 inline float complex_abs(const ComplexFloat& c) {
-    return std::sqrt(c.x * c.x + c.y * c.y);
+    return std::sqrt(c.real() * c.real() + c.imag() * c.imag());
 }
 
 inline ComplexFloat complex_conj(const ComplexFloat& c) {
-    return make_complex(c.x, -c.y);
+    return make_complex(c.real(), -c.imag());
 }
 
 inline ComplexFloat complex_mul(const ComplexFloat& a, const ComplexFloat& b) {
-    return make_complex(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+    return make_complex(a.real() * b.real() - a.imag() * b.imag(), a.real() * b.imag() + a.imag() * b.real());
 }
 
 inline ComplexFloat complex_add(const ComplexFloat& a, const ComplexFloat& b) {
-    return make_complex(a.x + b.x, a.y + b.y);
+    return make_complex(a.real() + b.real(), a.imag() + b.imag());
 }
 
 inline ComplexFloat complex_sub(const ComplexFloat& a, const ComplexFloat& b) {
-    return make_complex(a.x - b.x, a.y - b.y);
+    return make_complex(a.real() - b.real(), a.imag() - b.imag());
 }
 
 inline ComplexFloat complex_div(const ComplexFloat& a, const ComplexFloat& b) {
-    float denom = b.x * b.x + b.y * b.y;
-    return make_complex((a.x * b.x + a.y * b.y) / denom, 
-                        (a.y * b.x - a.x * b.y) / denom);
+    float denom = b.real() * b.real() + b.imag() * b.imag();
+    return make_complex((a.real() * b.real() + a.imag() * b.imag()) / denom, 
+                        (a.imag() * b.real() - a.real() * b.imag()) / denom);
 }
 
 // ============================================================================
@@ -139,37 +136,42 @@ public:
 // Device Functions for Complex Arithmetic
 // ============================================================================
 
+// __device__ __forceinline__ rocblas_float_complex d_make_complex(float r, float i) {
+//     rocblas_float_complex c;
+//     c.x = r;
+//     c.y = i;
+//     return c;
+// }
+
 __device__ __forceinline__ rocblas_float_complex d_make_complex(float r, float i) {
-    rocblas_float_complex c;
-    c.x = r;
-    c.y = i;
-    return c;
+    return rocblas_float_complex{r, i};
 }
+
 
 __device__ __forceinline__ rocblas_float_complex d_complex_add(
     const rocblas_float_complex& a, const rocblas_float_complex& b) {
-    return d_make_complex(a.x + b.x, a.y + b.y);
+    return d_make_complex(a.real() + b.real(), a.imag() + b.imag());
 }
 
 __device__ __forceinline__ rocblas_float_complex d_complex_sub(
     const rocblas_float_complex& a, const rocblas_float_complex& b) {
-    return d_make_complex(a.x - b.x, a.y - b.y);
+    return d_make_complex(a.real() - b.real(), a.imag() - b.imag());
 }
 
 __device__ __forceinline__ rocblas_float_complex d_complex_mul(
     const rocblas_float_complex& a, const rocblas_float_complex& b) {
-    return d_make_complex(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+    return d_make_complex(a.real() * b.real() - a.imag() * b.imag(), a.real() * b.imag() + a.imag() * b.real());
 }
 
 __device__ __forceinline__ rocblas_float_complex d_complex_div(
     const rocblas_float_complex& a, const rocblas_float_complex& b) {
-    float denom = b.x * b.x + b.y * b.y;
-    return d_make_complex((a.x * b.x + a.y * b.y) / denom, 
-                          (a.y * b.x - a.x * b.y) / denom);
+    float denom = b.real() * b.real() + b.imag() * b.imag();
+    return d_make_complex((a.real() * b.real() + a.imag() * b.imag()) / denom, 
+                          (a.imag() * b.real() - a.real() * b.imag()) / denom);
 }
 
 __device__ __forceinline__ float d_complex_abs(const rocblas_float_complex& c) {
-    return sqrtf(c.x * c.x + c.y * c.y);
+    return sqrtf(c.real() * c.real() + c.imag() * c.imag());
 }
 
 // ============================================================================
@@ -347,9 +349,8 @@ public:
         }
         
         // Copy to device
-        CHECK_HIP(hipMemcpy(d_augmented, augmented_host.data(), 
-                            n * 2 * n * sizeof(rocblas_float_complex), hipMemcpyHostToDevice));
-        CHECK_HIP(hipDeviceSynchronize());
+        CHECK_HIP(hipMemcpyAsync(d_augmented, augmented_host.data(), 
+                            n * 2 * n * sizeof(rocblas_float_complex), hipMemcpyHostToDevice, nullptr));
         
         // START GPU TIMING
         timer.start();
@@ -520,18 +521,19 @@ public:
                       A_contiguous.begin() + b * n * n);
         }
         
-        CHECK_HIP(hipMemcpy(d_A_batch, A_contiguous.data(), 
+        CHECK_HIP(hipMemcpyAsync(d_A_batch, A_contiguous.data(), 
                             batch_count * n * n * sizeof(rocblas_float_complex), 
-                            hipMemcpyHostToDevice));
-        CHECK_HIP(hipDeviceSynchronize());
+                            hipMemcpyHostToDevice, nullptr));
         
         // START GPU TIMING
         timer.start();
         
         // Batched Cholesky factorization: A = L * L^H
+        // ВАЖНО: rocBLAS использует column-major, наши данные в row-major
+        // Для row-major данных используем rocblas_fill_lower
         CHECK_ROCBLAS(rocsolver_cpotrf_batched(
             handle,
-            rocblas_fill_upper,
+            rocblas_fill_lower,
             n,
             d_A_array,
             n,
@@ -542,7 +544,7 @@ public:
         // Batched Cholesky inversion
         CHECK_ROCBLAS(rocsolver_cpotri_batched(
             handle,
-            rocblas_fill_upper,
+            rocblas_fill_lower,
             n,
             d_A_array,
             n,
@@ -558,18 +560,21 @@ public:
                             batch_count * n * n * sizeof(rocblas_float_complex),
                             hipMemcpyDeviceToHost));
         
-        // Unpack results and fill lower triangle (symmetry)
+        // Unpack results - rocblas_fill_lower (column-major) = upper triangle (row-major)
+        // Copy all data first, then fill lower from upper
         A_inv_host_batch.resize(batch_count);
         for (int b = 0; b < batch_count; ++b) {
             A_inv_host_batch[b].resize(n * n);
+            // Copy all data
+            std::copy(A_contiguous.begin() + b * n * n, 
+                      A_contiguous.begin() + (b + 1) * n * n,
+                      A_inv_host_batch[b].begin());
+            // Fill lower triangle from upper (Hermitian symmetry)
             for (int i = 0; i < n; ++i) {
-                for (int j = 0; j < n; ++j) {
-                    if (j >= i) {
-                        A_inv_host_batch[b][i * n + j] = A_contiguous[b * n * n + i * n + j];
-                    } else {
-                        // Fill lower triangle with conjugate of upper
-                        A_inv_host_batch[b][i * n + j] = complex_conj(A_inv_host_batch[b][j * n + i]);
-                    }
+                for (int j = 0; j < i; ++j) {
+                    // (i, j) where j < i is lower triangle
+                    // Copy from (j, i) which is upper triangle
+                    A_inv_host_batch[b][i * n + j] = complex_conj(A_inv_host_batch[b][j * n + i]);
                 }
             }
         }
@@ -610,8 +615,7 @@ public:
     float invert(const std::vector<rocblas_float_complex>& A_host,
                  std::vector<rocblas_float_complex>& A_inv_host) {
         GPUTimer timer;
-        CHECK_HIP(hipMemcpy(d_A, A_host.data(), n * n * sizeof(rocblas_float_complex), hipMemcpyHostToDevice));
-        CHECK_HIP(hipDeviceSynchronize());
+        CHECK_HIP(hipMemcpyAsync(d_A, A_host.data(), n * n * sizeof(rocblas_float_complex), hipMemcpyHostToDevice, nullptr));
         
         timer.start();
         CHECK_ROCBLAS(rocsolver_cgetrf(handle, n, n, d_A, n, d_ipiv, d_info));
@@ -646,17 +650,18 @@ public:
     float invert(const std::vector<rocblas_float_complex>& A_host,
                  std::vector<rocblas_float_complex>& A_inv_host) {
         GPUTimer timer;
-        CHECK_HIP(hipMemcpy(d_A, A_host.data(), n * n * sizeof(rocblas_float_complex), hipMemcpyHostToDevice));
-        CHECK_HIP(hipDeviceSynchronize());
+        CHECK_HIP(hipMemcpyAsync(d_A, A_host.data(), n * n * sizeof(rocblas_float_complex), hipMemcpyHostToDevice, nullptr));
         
         timer.start();
-        CHECK_ROCBLAS(rocsolver_cpotrf(handle, rocblas_fill_upper, n, d_A, n, d_info));
-        CHECK_ROCBLAS(rocsolver_cpotri(handle, rocblas_fill_upper, n, d_A, n, d_info));
+        // Cholesky Factorization + Inversion
+        CHECK_ROCBLAS(rocsolver_cpotrf(handle, rocblas_fill_lower, n, d_A, n, d_info));
+        CHECK_ROCBLAS(rocsolver_cpotri(handle, rocblas_fill_lower, n, d_A, n, d_info));
         float gpu_time = timer.stop();
         
         CHECK_HIP(hipMemcpy(A_inv_host.data(), d_A, n * n * sizeof(rocblas_float_complex), hipMemcpyDeviceToHost));
         
-        // Fill lower triangle
+        // Fill lower triangle from upper (Hermitian symmetry)
+        // Result is in upper triangle (row-major), copy to lower
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < i; ++j) {
                 A_inv_host[i * n + j] = complex_conj(A_inv_host[j * n + i]);
@@ -687,7 +692,7 @@ void initialize_positive_definite_hermitian(std::vector<rocblas_float_complex>& 
                 sum = complex_add(sum, complex_mul(B[i * n + k], complex_conj(B[j * n + k])));
             }
             if (i == j) {
-                sum.x += static_cast<float>(n);
+                sum = make_complex(sum.real() + static_cast<float>(n), sum.imag());
             }
             matrix[i * n + j] = sum;
             matrix[j * n + i] = complex_conj(sum);
@@ -719,7 +724,7 @@ float compute_frobenius_error(const std::vector<rocblas_float_complex>& A,
         for (int j = 0; j < n; ++j) {
             rocblas_float_complex expected = (i == j) ? make_complex(1.0f, 0.0f) : make_complex(0.0f, 0.0f);
             rocblas_float_complex diff = complex_sub(product[i * n + j], expected);
-            error += diff.x * diff.x + diff.y * diff.y;
+            error += diff.real() * diff.real() + diff.imag() * diff.imag();
         }
     }
     
