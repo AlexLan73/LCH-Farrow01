@@ -69,26 +69,26 @@ AntennaFFTProcMax::AntennaFFTProcMax(const AntennaFFTParams& params)
     }
     
     // Проверка инициализации OpenCLComputeEngine
-    if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+    if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
 
       // Инициализация OpenCL
-      gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+      ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
 
       // Проверка инициализация OpenCL
-      if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+      if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
         throw std::runtime_error("OpenCLComputeEngine not initialized. Call Initialize() first.");
       }
     }
     
-    engine_ = &gpu::OpenCLComputeEngine::GetInstance();
+    engine_ = &ManagerOpenCL::OpenCLComputeEngine::GetInstance();
     
     // Получить контекст и устройство
-    auto& core = gpu::OpenCLCore::GetInstance();
+    auto& core = ManagerOpenCL::OpenCLCore::GetInstance();
     context_ = core.GetContext();
     device_ = core.GetDevice();
     
     // Получить command queue
-    queue_ = gpu::CommandQueuePool::GetNextQueue();
+    queue_ = ManagerOpenCL::CommandQueuePool::GetNextQueue();
     
     // Вычислить nFFT
     nFFT_ = CalculateNFFT(params_.count_points);
@@ -280,7 +280,7 @@ size_t AntennaFFTProcMax::EstimateRequiredMemory() const {
 
 bool AntennaFFTProcMax::CheckAvailableMemory(size_t required_memory, double threshold) const {
     // Получить размер глобальной памяти GPU
-    size_t global_memory = gpu::OpenCLCore::GetInstance().GetGlobalMemorySize();
+    size_t global_memory = ManagerOpenCL::OpenCLCore::GetInstance().GetGlobalMemorySize();
     
     // Рассчитать доступную память с учётом порога
     size_t available_memory = static_cast<size_t>(global_memory * threshold);
@@ -365,7 +365,7 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
     printf("  │  Total beams             │  %10zu  │\n", params_.beam_count);
     printf("  │  Batch size (base)       │  %10zu  │\n", batch_size);
     printf("  │  Number of batches       │  %10zu  │\n", num_batches);
-    printf("  │  Queue pool size         │  %10zu  │\n", gpu::CommandQueuePool::GetPoolSize());
+    printf("  │  Queue pool size         │  %10zu  │\n", ManagerOpenCL::CommandQueuePool::GetPoolSize());
     std::cout << "\n";
     
     // Очистить профилирование
@@ -409,10 +409,10 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
         // Выравниваем на размер complex (8 bytes) для создания буфера
         size_t maxima_complex_elements = (maxima_buf_elements * 16 + 7) / 8;
         
-        batch_fft_input_ = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
-        batch_fft_output_ = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
+        batch_fft_input_ = engine_->CreateBuffer(fft_buf_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
+        batch_fft_output_ = engine_->CreateBuffer(fft_buf_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
         // batch_input_buffer_ НЕ НУЖЕН - работаем напрямую с input_signal!
-        batch_maxima_ = engine_->CreateBuffer(maxima_complex_elements, gpu::MemoryType::GPU_READ_WRITE);
+        batch_maxima_ = engine_->CreateBuffer(maxima_complex_elements, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
         batch_buffers_size_ = max_batch_beams;
         
         auto t_buf_end = std::chrono::high_resolution_clock::now();
@@ -486,12 +486,12 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
         }
         
         // Получить очередь из пула
-        cl_command_queue batch_queue = gpu::CommandQueuePool::GetNextQueue();
+        cl_command_queue batch_queue = ManagerOpenCL::CommandQueuePool::GetNextQueue();
         
         std::cout << "  [Batch " << batch_idx << "] Processing beams " 
                   << start_beam << "-" << (start_beam + beams_in_batch - 1)
                   << " (" << beams_in_batch << " beams, queue " 
-                  << gpu::CommandQueuePool::GetCurrentQueueIndex() << ")\n";
+                  << ManagerOpenCL::CommandQueuePool::GetCurrentQueueIndex() << ")\n";
         
         // Структура для профилирования этого батча
         BatchProfilingData batch_prof;
@@ -797,10 +797,10 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     size_t total_fft_size = params_.beam_count * nFFT_;
     
     if (!buffer_fft_input_) {
-        buffer_fft_input_ = engine_->CreateBuffer(total_fft_size, gpu::MemoryType::GPU_READ_WRITE);
+        buffer_fft_input_ = engine_->CreateBuffer(total_fft_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     }
     if (!buffer_fft_output_) {
-        buffer_fft_output_ = engine_->CreateBuffer(total_fft_size, gpu::MemoryType::GPU_READ_WRITE);
+        buffer_fft_output_ = engine_->CreateBuffer(total_fft_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     }
     
     cl_uint beam_count = static_cast<cl_uint>(params_.beam_count);
@@ -809,12 +809,12 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     
     if (!buffer_selected_complex_) {
         buffer_selected_complex_ = engine_->CreateBuffer(
-            params_.beam_count * search_range, gpu::MemoryType::GPU_READ_WRITE);
+            params_.beam_count * search_range, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     }
     if (!buffer_selected_magnitude_) {
         size_t float_elements = params_.beam_count * search_range;
         size_t complex_elements = (float_elements * sizeof(float) + sizeof(std::complex<float>) - 1) / sizeof(std::complex<float>);
-        buffer_selected_magnitude_ = engine_->CreateBuffer(complex_elements, gpu::MemoryType::GPU_READ_WRITE);
+        buffer_selected_magnitude_ = engine_->CreateBuffer(complex_elements, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     }
     
     if (!post_kernel_) {
@@ -883,7 +883,7 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     size_t maxima_size = params_.beam_count * params_.max_peaks_count * sizeof(MaxValue);
     if (!buffer_maxima_) {
         const size_t maxima_elements = (maxima_size + sizeof(std::complex<float>) - 1) / sizeof(std::complex<float>);
-        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, gpu::MemoryType::GPU_READ_WRITE);
+        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     }
     cl_mem maxima_output = buffer_maxima_->Get();
     
@@ -994,7 +994,7 @@ AntennaFFTResult AntennaFFTProcMax::Process(const std::vector<std::complex<float
                                    ", got: " + std::to_string(input_data.size()));
     }
     
-    auto buffer = engine_->CreateBufferWithData(input_data, gpu::MemoryType::GPU_READ_ONLY);
+    auto buffer = engine_->CreateBufferWithData(input_data, ManagerOpenCL::MemoryType::GPU_READ_ONLY);
     return Process(buffer->Get());
 }
 
@@ -2079,7 +2079,7 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
     // Создать буфер для результатов максимумов
     if (!buffer_maxima_) {
         const size_t maxima_elements = (maxima_size + sizeof(std::complex<float>) - 1) / sizeof(std::complex<float>);
-        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, gpu::MemoryType::GPU_READ_WRITE);
+        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
@@ -2232,7 +2232,7 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
     // Создать буфер для результатов максимумов
     if (!buffer_maxima_) {
         const size_t maxima_elements = (maxima_size + sizeof(std::complex<float>) - 1) / sizeof(std::complex<float>);
-        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, gpu::MemoryType::GPU_READ_WRITE);
+        buffer_maxima_ = engine_->CreateBuffer(maxima_elements, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
@@ -2611,12 +2611,12 @@ void AntennaFFTProcMax::InitializeParallelResources(size_t max_beams_per_stream,
         auto& res = parallel_resources_[i];
         
         // Создать буферы для этого потока
-        res.fft_input = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
-        res.fft_output = engine_->CreateBuffer(fft_buf_size, gpu::MemoryType::GPU_READ_WRITE);
-        res.maxima = engine_->CreateBuffer(maxima_complex_elements, gpu::MemoryType::GPU_READ_WRITE);
+        res.fft_input = engine_->CreateBuffer(fft_buf_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
+        res.fft_output = engine_->CreateBuffer(fft_buf_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
+        res.maxima = engine_->CreateBuffer(maxima_complex_elements, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
         
         // Получить command queue для этого потока
-        res.queue = gpu::CommandQueuePool::GetQueue(i % gpu::CommandQueuePool::GetPoolSize());
+        res.queue = ManagerOpenCL::CommandQueuePool::GetQueue(i % ManagerOpenCL::CommandQueuePool::GetPoolSize());
         
         // Создать FFT план для этого потока
         size_t clLengths[1] = {nFFT_};
@@ -2916,7 +2916,7 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
     // Количество параллельных потоков
     // ОГРАНИЧЕНИЕ: память GPU! Каждый поток требует ~2 × batch_size × nFFT × 8 bytes
     size_t memory_per_stream = 2 * max_batch_beams * nFFT_ * sizeof(std::complex<float>);
-    size_t total_gpu_memory = gpu::OpenCLCore::GetInstance().GetGlobalMemorySize();
+    size_t total_gpu_memory = ManagerOpenCL::OpenCLCore::GetInstance().GetGlobalMemorySize();
     size_t available_memory = static_cast<size_t>(total_gpu_memory * batch_config_.memory_usage_limit);
     
     // Уже занято: входные данные + batch буферы основного режима

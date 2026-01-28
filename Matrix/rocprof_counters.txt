@@ -1,0 +1,36 @@
+# ==============================================================================
+# rocprof Hardware Counter Configuration
+# Hermitian Matrix Inversion Profiling on AMD AI100 (gfx908)
+# OS: Debian Linux
+# ==============================================================================
+
+# Timing metrics
+pmc: GPUTime
+
+# Memory bandwidth metrics
+pmc: FetchSize
+pmc: WriteSize
+
+# Cache metrics
+pmc: L1CacheHit
+pmc: L2CacheHit
+
+# Compute utilization
+pmc: VALUUtilization
+pmc: SALUUtilization
+
+# Instruction counts
+pmc: VALUInsts
+pmc: SALUInsts
+
+# Memory operations
+pmc: MemUnitBusy
+pmc: MemUnitStalled
+
+# Wavefront metrics
+pmc: Wavefronts
+pmc: VALUBusy
+
+# LDS usage
+pmc: LDSBankConflict
+

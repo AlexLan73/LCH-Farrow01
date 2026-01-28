@@ -6,9 +6,10 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/include/GPU",
+                "${workspaceFolder}/include/ManagerOpenCL",
                 "${workspaceFolder}/include/interface",
-                "${workspaceFolder}/include/generator",
                 "${workspaceFolder}/include/Test",
+                "${workspaceFolder}/src",
                 "${workspaceFolder}/clFFT/include",
                 "/usr/include",
                 "/usr/local/include",
@@ -28,6 +29,10 @@
                 "path": [
                     "${workspaceFolder}",
                     "${workspaceFolder}/include",
+                    "${workspaceFolder}/include/GPU",
+                    "${workspaceFolder}/include/ManagerOpenCL",
+                    "${workspaceFolder}/include/interface",
+                    "${workspaceFolder}/src",
                     "${workspaceFolder}/clFFT/include",
                     "/usr/include",
                     "/usr/local/include"

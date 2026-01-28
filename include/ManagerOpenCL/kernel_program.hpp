@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <mutex>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // KernelProgram - Управление OpenCL программами и kernels
@@ -139,4 +139,4 @@ private:
     KernelProgramCache() = delete;
 };
 
-}  // namespace gpu
+}  // namespace ManagerOpenCL

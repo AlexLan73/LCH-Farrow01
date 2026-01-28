@@ -7,7 +7,7 @@
 #include <mutex>
 #include <atomic>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // CommandQueuePool - Управление пулом command queues для асинхронности
@@ -162,4 +162,4 @@ private:
 
 };
 
-}  // namespace gpu
+}  // namespace ManagerOpenCL

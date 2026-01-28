@@ -11,9 +11,9 @@ x64/
 # CMake
 #CMakeCache.txt
 CMakeFiles/
-cmake_install.cmake
+#cmake_install.cmake
 Makefile
-*.cmake
+#*.cmake
 
 ################################################################################
 # CMake Presets (personal build configuration)

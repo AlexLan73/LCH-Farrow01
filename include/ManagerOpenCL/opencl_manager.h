@@ -9,14 +9,14 @@
 #include <stdexcept>
 
 // Forward declaration для GPUMemoryBuffer (полное определение в gpu_memory_buffer.hpp)
-namespace gpu {
+namespace ManagerOpenCL {
     class GPUMemoryBuffer;
 }
 
 // Полное определение MemoryType нужно для параметров по умолчанию
 #include "ManagerOpenCL/memory_type.hpp"
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 /**
  * @class OpenCLManager
@@ -356,7 +356,7 @@ private:
     void ValidateBufferContext(cl_mem external_buffer) const;
 };
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 
 
 #endif // OPENCL_MANAGER_H

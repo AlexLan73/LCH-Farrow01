@@ -5,7 +5,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // KernelProgram реализация
@@ -197,4 +197,4 @@ size_t KernelProgramCache::GetCacheSize() {
     return cache_.size();
 }
 
-}  // namespace gpu
+}  // namespace ManagerOpenCL

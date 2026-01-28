@@ -1,0 +1,43 @@
+================================================================================
+          HIP <-> OpenCL Zero-Copy Interoperability на AMD ROCm
+================================================================================
+
+БЫСТРЫЙ СТАРТ:
+
+1. ПРОБЛЕМА:
+   Много кода на OpenCL, нужно интегрировать с HIP/rocBLAS без переписывания
+   и без копирования данных GPU↔CPU
+
+2. РЕШЕНИЕ:
+   Использовать OpenCL SVM (Shared Virtual Memory) буферы
+   Тот же указатель работает в обоих API!
+
+3. КАК ЭТО РАБОТАЕТ:
+   
+   // Выделить память
+   Complex* data = (Complex*)clSVMAlloc(ctx, flags, size, 0);
+   
+   // OpenCL - работает!
+   clSetKernelArgSVMPointer(kernel, 0, data);
+   
+   // HIP - тоже работает с тем же указателем!
+   hip_kernel<<<grid, block>>>(data, n);
+   
+   // rocBLAS/rocSOLVER - тоже!
+   rocsolver_cpotrf(handle, fill, n, (rocblas_float_complex*)data, lda, info);
+
+4. ПРОВЕРЕНО НА:
+   - AMD Instinct MI100
+   - ROCm 6.3.2
+   - OpenCL 2.1 AMD-APP (3635.0)
+
+5. ФАЙЛЫ ПРОЕКТА:
+   - README.md                    - Главная навигация
+   - EXECUTIVE_SUMMARY_RU.md      - Краткое резюме
+   - TECHNICAL_ANALYSIS.md        - Полный технический отчёт
+   - ARCHITECTURE_DIAGRAM.md      - Архитектурные диаграммы
+   - IMPLEMENTATION_GUIDE.md      - Практическое руководство
+   - code/                        - Рабочие примеры кода
+
+================================================================================
+

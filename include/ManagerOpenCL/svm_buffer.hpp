@@ -25,7 +25,7 @@
 #include <iostream>
 #include <iomanip>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Class: SVMBuffer - RAII обёртка для SVM памяти
@@ -511,5 +511,5 @@ inline void SVMBuffer::CheckCLError(cl_int err, const std::string& operation) {
     }
 }
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 

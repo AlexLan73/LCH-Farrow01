@@ -36,7 +36,7 @@
 #include <CL/cl.h>
 
 // Forward declarations
-namespace gpu {
+namespace ManagerOpenCL {
     class OpenCLComputeEngine;
     class GPUMemoryBuffer;
 }
@@ -232,7 +232,7 @@ struct LagrangeMatrix {
  * EXAMPLE:
  * @code
  * // Инициализировать OpenCL
- * gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+ * ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
  * 
  * // Загрузить матрицу Лагранжа
  * auto lagrange = LagrangeMatrix::LoadFromJSON("lagrange_matrix.json");
@@ -362,7 +362,7 @@ private:
     // Конфигурация
     FractionalDelayConfig config_;
     LagrangeMatrix lagrange_matrix_;
-    gpu::OpenCLComputeEngine* engine_;
+    ManagerOpenCL::OpenCLComputeEngine* engine_;
     
     // OpenCL объекты
     cl_context context_;
@@ -372,9 +372,9 @@ private:
     cl_program program_;
     
     // GPU буферы
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_lagrange_;  ///< Матрица Лагранжа 48×5
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_delays_;    ///< Параметры задержек для лучей
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_temp_;      ///< Временный буфер для IN-PLACE
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_lagrange_;  ///< Матрица Лагранжа 48×5
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_delays_;    ///< Параметры задержек для лучей
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_temp_;      ///< Временный буфер для IN-PLACE
     
     // Статистика
     FDPProfilingResults last_profiling_;

@@ -10,7 +10,7 @@
 #include "interface/combined_delay_param.h"
 
 // Forward declarations
-namespace gpu {
+namespace ManagerOpenCL {
     class OpenCLComputeEngine;
     class KernelProgram;
     class GPUMemoryBuffer;
@@ -41,9 +41,9 @@ namespace radar {
  * ИСПОЛЬЗОВАНИЕ:
  * ```cpp
  * // Инициализация (один раз в main)
- * gpu::OpenCLCore::Initialize(gpu::DeviceType::GPU);
- * gpu::CommandQueuePool::Initialize(4);
- * gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+ * ManagerOpenCL::OpenCLCore::Initialize(ManagerOpenCL::DeviceType::GPU);
+ * ManagerOpenCL::CommandQueuePool::Initialize(4);
+ * ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
  * 
  * // Использование
  * LFMParameters params;
@@ -59,7 +59,7 @@ namespace radar {
  * cl_mem signal_gpu = gen.signal_base();
  * 
  * // Прочитать результаты (через engine)
- * auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+ * auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
  * auto result = engine.ReadBufferFromGPU(signal_gpu, total_size);
  * ```
  */
@@ -303,7 +303,7 @@ private:
     // ════════════════════════════════════════════════════════════════
 
     /// ✅ Указатель на главный фасад (НЕ создаём свой контекст!)
-    gpu::OpenCLComputeEngine* engine_;
+    ManagerOpenCL::OpenCLComputeEngine* engine_;
 
     /// Параметры ЛЧМ сигнала
     LFMParameters params_;
@@ -315,17 +315,17 @@ private:
     size_t total_size_;    // num_beams * num_samples
 
     /// Кэшированные программы и kernels
-    std::shared_ptr<gpu::KernelProgram> kernel_program_;
+    std::shared_ptr<ManagerOpenCL::KernelProgram> kernel_program_;
     cl_kernel kernel_lfm_basic_;      // kernel_lfm_basic
     cl_kernel kernel_lfm_delayed_;    // kernel_lfm_delayed
     cl_kernel kernel_lfm_combined_;   // kernel_lfm_combined_delays
     cl_kernel kernel_sinusoid_combined_; // kernel_sinusoid_combined
 
     /// Буферы результатов (кэш) - сохраняем unique_ptr чтобы буферы не освобождались
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_base_;     // Результат signal_base()
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_delayed_;  // Результат signal_valedation()
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_combined_; // Результат signal_combined_delays()
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_signal_sinusoid_; // Результат signal_sinusoid_combined()
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_signal_base_;     // Результат signal_base()
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_signal_delayed_;  // Результат signal_valedation()
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_signal_combined_; // Результат signal_combined_delays()
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_signal_sinusoid_; // Результат signal_sinusoid_combined()
 
     // ════════════════════════════════════════════════════════════════
     // PRIVATE METHODS - ИНИЦИАЛИЗАЦИЯ И УТИЛИТЫ

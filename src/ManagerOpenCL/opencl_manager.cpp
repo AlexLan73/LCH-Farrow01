@@ -9,7 +9,7 @@
 #include <cstring>
 #include <iomanip>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ═══════════════════════════════════════════════════════════════════
 // SINGLETON INSTANCE
@@ -613,4 +613,4 @@ size_t OpenCLManager::GetKernelCacheSize() const {
     return kernel_cache_.size();
 }
 
-} // namespace gpu
+} // namespace ManagerOpenCL

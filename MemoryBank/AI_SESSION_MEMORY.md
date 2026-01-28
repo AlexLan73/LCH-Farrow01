@@ -24,20 +24,6 @@
 
 ## 🚀 Session 2 - 2026-01-19: Hybrid GPU Memory System
 
-### Созданные файлы:
-1. `include/GPU/svm_capabilities.hpp` - определение возможностей SVM
-2. `include/GPU/i_memory_buffer.hpp` - абстрактный интерфейс для буферов
-3. `include/GPU/svm_buffer.hpp` - RAII обёртка для SVM памяти
-4. `include/GPU/regular_buffer.hpp` - RAII обёртка для cl_mem
-5. `include/GPU/hybrid_buffer.hpp` - BufferFactory с автовыбором стратегии
-6. `include/GPU/gpu_memory.hpp` - главный include файл
-7. `include/Test/test_hybrid_buffer.hpp` - тесты
-
-### Обновлённые файлы:
-- `include/GPU/opencl_core.hpp` - добавлены SVM методы
-- `include/GPU/opencl_core.cpp` - реализация SVM методов
-- `include/GPU/opencl_compute_engine.hpp` - интеграция BufferFactory
-- `include/GPU/opencl_compute_engine.cpp` - реализация новых методов
 
 ### Архитектура:
 ```

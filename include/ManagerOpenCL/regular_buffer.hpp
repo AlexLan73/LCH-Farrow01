@@ -21,7 +21,7 @@
 #include <iostream>
 #include <iomanip>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Class: RegularBuffer - RAII обёртка для cl_mem
@@ -455,5 +455,5 @@ inline void RegularBuffer::CheckCLError(cl_int err, const std::string& operation
     }
 }
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Enum для типов памяти GPU
@@ -12,5 +12,5 @@ enum class MemoryType {
     GPU_READ_WRITE
 };
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 
