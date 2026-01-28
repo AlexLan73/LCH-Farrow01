@@ -15,6 +15,20 @@
 int main(int argc, char* argv[]) {
 
 
+
+     // Запуск тестов Antenna FFT
+   test_antenna_fft_proc_max::run_all_tests();
+
+
+  return 0;
+}
+
+/**
+ * 
+     // Запуск тестов Antenna FFT
+//   test_antenna_fft_proc_max::run_all_tests();
+* 
+  пример для использования жробной заделжки
     LagrangeMatrixLoader loader;
 
     // Load matrix from JSON file
@@ -34,19 +48,9 @@ int main(int argc, char* argv[]) {
     catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
     }
-
-     // Запуск тестов Antenna FFT
-   test_antenna_fft_proc_max::run_all_tests();
+***************************
 
 
-  return 0;
-}
-
-/**
- * 
-     // Запуск тестов Antenna FFT
-//   test_antenna_fft_proc_max::run_all_tests();
-* 
  * 
  * !!! ВАЖНО !!!
  * Примеры использования GeneratorGPU с signal_sinusoids 
