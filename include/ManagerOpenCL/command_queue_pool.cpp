@@ -14,7 +14,7 @@
 #include <cstdlib>
 #include <ctime>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ✅ Static variable initialization
 std::mutex CommandQueuePool::mutex_;
@@ -219,4 +219,4 @@ void CommandQueuePool::ReleaseQueues() {
     }
 }
 
-}  // namespace gpu
+}  // namespace ManagerOpenCL

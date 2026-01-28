@@ -15,7 +15,7 @@
 #include <array>
 #include <stdexcept>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // MemoryType и GPUMemoryBuffer определены в отдельных файлах:
@@ -41,16 +41,16 @@ namespace gpu {
  * Использование:
  * ```cpp
  * // 1. Инициализация
- * gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
- * auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+ * ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
+ * auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
  *
  * // 2. Создать программу и kernel
  * auto program = engine.LoadProgram(kernel_source);
  * auto kernel = engine.GetKernel(program, "my_kernel");
  *
  * // 3. Создать буферы
- * auto input = engine.CreateBuffer(1024, gpu::MemoryType::GPU_READ_WRITE);
- * auto output = engine.CreateBuffer(1024, gpu::MemoryType::GPU_WRITE_ONLY);
+ * auto input = engine.CreateBuffer(1024, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
+ * auto output = engine.CreateBuffer(1024, ManagerOpenCL::MemoryType::GPU_WRITE_ONLY);
  *
  * // 4. Загрузить данные
  * input->WriteToGPU(my_data);
@@ -335,4 +335,4 @@ OpenCLComputeEngine::CreateTypedBufferWithData(
     return buffer;
 }
 
-}  // namespace gpu
+}  // namespace ManagerOpenCL

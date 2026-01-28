@@ -31,7 +31,7 @@
 #include <complex>
 
 using namespace radar;
-using namespace gpu;
+using namespace ManagerOpenCL;
 
 // ============================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ

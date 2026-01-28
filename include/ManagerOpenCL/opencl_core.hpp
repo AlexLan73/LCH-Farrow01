@@ -9,9 +9,9 @@
 #include <array>
 
 // Forward declaration для SVMCapabilities
-namespace gpu { struct SVMCapabilities; }
+namespace ManagerOpenCL { struct SVMCapabilities; }
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // ENUM для типа девайса
@@ -213,4 +213,4 @@ inline void CheckCLError(cl_int error, const std::string& operation) {
     }
 }
 
-} // namespace gpu
+} // namespace ManagerOpenCL

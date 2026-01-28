@@ -7,7 +7,7 @@
 #include <complex>
 #include <string>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Класс GPUMemoryBuffer - обёртка над GPU памятью
@@ -137,5 +137,5 @@ private:
     static void CheckCLError(cl_int error, const std::string& operation);
 };
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 

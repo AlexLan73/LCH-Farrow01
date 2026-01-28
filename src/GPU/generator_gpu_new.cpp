@@ -63,13 +63,13 @@ namespace radar
     // ✅ Получить engine (ДОЛЖЕН быть инициализирован!)
     try
     {
-      engine_ = &gpu::OpenCLComputeEngine::GetInstance();
+      engine_ = &ManagerOpenCL::OpenCLComputeEngine::GetInstance();
     }
     catch (const std::exception &e)
     {
       throw std::runtime_error(
           "[GeneratorGPU] OpenCLComputeEngine not initialized.\n"
-          "Call gpu::OpenCLCore::Initialize() → CommandQueuePool::Initialize() → "
+          "Call ManagerOpenCL::OpenCLCore::Initialize() → CommandQueuePool::Initialize() → "
           "OpenCLComputeEngine::Initialize() before creating GeneratorGPU");
     }
 
@@ -548,7 +548,7 @@ __kernel void kernel_sinusoid_combined(
     }
 
     // ✅ Используем CommandQueuePool для получения очереди
-    cl_command_queue queue = gpu::CommandQueuePool::GetNextQueue();
+    cl_command_queue queue = ManagerOpenCL::CommandQueuePool::GetNextQueue();
 
     cl_int err = CL_SUCCESS;
 
@@ -646,7 +646,7 @@ __kernel void kernel_sinusoid_combined(
     std::cout << "[GeneratorGPU] Generating signal_base()..." << std::endl;
 
     // ✅ Создать GPU буфер через engine
-    auto output = engine_->CreateBuffer(total_size_, gpu::MemoryType::GPU_WRITE_ONLY);
+    auto output = engine_->CreateBuffer(total_size_, ManagerOpenCL::MemoryType::GPU_WRITE_ONLY);
 
     try
     {
@@ -705,10 +705,10 @@ __kernel void kernel_sinusoid_combined(
           std::vector<std::complex<float>>(
               reinterpret_cast<const std::complex<float> *>(m_delay),
               reinterpret_cast<const std::complex<float> *>(m_delay) + num_delay_params),
-          gpu::MemoryType::GPU_READ_ONLY);
+          ManagerOpenCL::MemoryType::GPU_READ_ONLY);
 
       // ✅ Создать GPU буфер для выходных данных
-      auto output = engine_->CreateBuffer(total_size_, gpu::MemoryType::GPU_WRITE_ONLY);
+      auto output = engine_->CreateBuffer(total_size_, ManagerOpenCL::MemoryType::GPU_WRITE_ONLY);
 
       // ✅ Выполнить kernel
       ExecuteKernel(kernel_lfm_delayed_, output->Get(), delay_gpu_buffer->Get());
@@ -759,13 +759,13 @@ __kernel void kernel_sinusoid_combined(
           // ✅ Шаг 2: Загрузить на GPU через типобезопасный API
           auto combined_gpu_buffer = engine_->CreateTypedBufferWithData(
               combined_host,
-              gpu::MemoryType::GPU_READ_ONLY
+              ManagerOpenCL::MemoryType::GPU_READ_ONLY
           );
 
           // ✅ Шаг 3: Создать выходной буфер
           auto output = engine_->CreateBuffer(
               total_size_,
-              gpu::MemoryType::GPU_WRITE_ONLY
+              ManagerOpenCL::MemoryType::GPU_WRITE_ONLY
           );
 
           // ✅ Шаг 4: Выполнить kernel
@@ -873,7 +873,7 @@ __kernel void kernel_sinusoid_combined(
           
           auto params_buffer = engine_->CreateTypedBufferWithData(
               ray_params_array,
-              gpu::MemoryType::GPU_READ_ONLY
+              ManagerOpenCL::MemoryType::GPU_READ_ONLY
           );
 
           // ════════════════════════════════════════════════════════════════
@@ -883,14 +883,14 @@ __kernel void kernel_sinusoid_combined(
           size_t total_size = params.num_rays * params.count_points;
           auto output = engine_->CreateBuffer(
               total_size,
-              gpu::MemoryType::GPU_WRITE_ONLY
+              ManagerOpenCL::MemoryType::GPU_WRITE_ONLY
           );
 
           // ════════════════════════════════════════════════════════════════
           // ШАГ 4: Установить аргументы kernel
           // ════════════════════════════════════════════════════════════════
           
-          cl_command_queue queue = gpu::CommandQueuePool::GetNextQueue();
+          cl_command_queue queue = ManagerOpenCL::CommandQueuePool::GetNextQueue();
           cl_int err = CL_SUCCESS;
 
           cl_mem output_mem = output->Get();
@@ -1010,7 +1010,7 @@ __kernel void kernel_sinusoid_combined(
     }
 
     // ✅ Проверка, что хотя бы один буфер создан
-    gpu::GPUMemoryBuffer* active_buffer = nullptr;
+    ManagerOpenCL::GPUMemoryBuffer* active_buffer = nullptr;
     if (buffer_signal_sinusoid_ && buffer_signal_sinusoid_->Get())
     {
       active_buffer = buffer_signal_sinusoid_.get();
@@ -1042,7 +1042,7 @@ __kernel void kernel_sinusoid_combined(
     try
     {
       // ✅ Получить валидную очередь
-      cl_command_queue queue = gpu::CommandQueuePool::GetNextQueue();
+      cl_command_queue queue = ManagerOpenCL::CommandQueuePool::GetNextQueue();
       if (!queue)
       {
         std::cerr << "❌ GetSignalAsVector: Invalid command queue" << std::endl;
@@ -1115,10 +1115,10 @@ __kernel void kernel_sinusoid_combined(
 
     ClearGPU();
 
-    auto &core = gpu::OpenCLCore::GetInstance();
+    auto &core = ManagerOpenCL::OpenCLCore::GetInstance();
 
     // ✅ Проверка, что хотя бы один буфер создан
-    gpu::GPUMemoryBuffer* active_buffer = nullptr;
+    ManagerOpenCL::GPUMemoryBuffer* active_buffer = nullptr;
     if (buffer_signal_sinusoid_ && buffer_signal_sinusoid_->Get())
     {
       active_buffer = buffer_signal_sinusoid_.get();
@@ -1141,12 +1141,12 @@ __kernel void kernel_sinusoid_combined(
       return {};
     }
 
-    gpu::GPUMemoryBuffer buffer(
+    ManagerOpenCL::GPUMemoryBuffer buffer(
         core.GetContext(),
-        gpu::CommandQueuePool::GetNextQueue(),
+        ManagerOpenCL::CommandQueuePool::GetNextQueue(),
         active_buffer->Get(), // Получаем cl_mem из активного буфера
         total_size_,
-        gpu::MemoryType::GPU_READ_ONLY);
+        ManagerOpenCL::MemoryType::GPU_READ_ONLY);
 
     // РАЗЛИЧИЕ: используем ReadPartial() вместо ReadFromGPU()
     auto all_data = buffer.ReadPartial(total_size_); // Сначала читаем всё
@@ -1173,7 +1173,7 @@ __kernel void kernel_sinusoid_combined(
     // ШАГ 2: Получить engine и OpenCLCore
     // ════════════════════════════════════════════════════════════════════════
 
-    auto &core = gpu::OpenCLCore::GetInstance();
+    auto &core = ManagerOpenCL::OpenCLCore::GetInstance();
 
     // ════════════════════════════════════════════════════════════════════════
     // ШАГ 3: Обернуть raw cl_mem в GPUMemoryBuffer (NON-OWNING!)
@@ -1187,7 +1187,7 @@ __kernel void kernel_sinusoid_combined(
     // GPUMemoryBuffer(context, queue, external_buffer, num_elements, type)
 
     // ✅ Проверка, что хотя бы один буфер создан
-    gpu::GPUMemoryBuffer* active_buffer = nullptr;
+    ManagerOpenCL::GPUMemoryBuffer* active_buffer = nullptr;
     if (buffer_signal_sinusoid_ && buffer_signal_sinusoid_->Get())
     {
       active_buffer = buffer_signal_sinusoid_.get();
@@ -1212,12 +1212,12 @@ __kernel void kernel_sinusoid_combined(
 
     try
     {
-      gpu::GPUMemoryBuffer buffer(
+      ManagerOpenCL::GPUMemoryBuffer buffer(
           core.GetContext(),                     // контекст OpenCL
-          gpu::CommandQueuePool::GetNextQueue(), // очередь для операции
+          ManagerOpenCL::CommandQueuePool::GetNextQueue(), // очередь для операции
           active_buffer->Get(),                  // cl_mem из активного буфера (НЕ удалится!)
           total_size_,                           // всего элементов (num_beams * num_samples)
-          gpu::MemoryType::GPU_READ_ONLY         // тип: только чтение
+          ManagerOpenCL::MemoryType::GPU_READ_ONLY         // тип: только чтение
       );
 
       // ════════════════════════════════════════════════════════════════════
@@ -1262,10 +1262,10 @@ cl_mem GeneratorGPU::signal_combined_delays(
     
     auto combined_gpu_buffer = engine_->CreateBufferWithData(
         std::vector<CombinedDelayParam>(combined_delays, combined_delays + num_delay_params),
-        gpu::MemoryType::GPU_READ_ONLY
+        ManagerOpenCL::MemoryType::GPU_READ_ONLY
     );
     
-    auto output = engine_->CreateBuffer(total_size_, gpu::MemoryType::GPU_WRITE_ONLY);
+    auto output = engine_->CreateBuffer(total_size_, ManagerOpenCL::MemoryType::GPU_WRITE_ONLY);
     ExecuteKernel(kernel_lfm_combined_, output->Get(), combined_gpu_buffer->Get());
     
     buffer_signal_combined_ = std::move(output);

@@ -35,7 +35,7 @@ namespace antenna_fft {
  * ИСПОЛЬЗОВАНИЕ:
  * ```cpp
  * // Инициализация OpenCL (один раз)
- * gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+ * ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
  * 
  * // Создание процессора
  * AntennaFFTParams params(5, 1000, 512, 3); // 5 лучей, 1000 точек, 512 выходных точек, 3 максимума
@@ -393,7 +393,7 @@ private:
     size_t nFFT_;                          // Вычисленный размер FFT
     
     // OpenCL ресурсы
-    gpu::OpenCLComputeEngine* engine_;     // Указатель на engine (не владеем)
+    ManagerOpenCL::OpenCLComputeEngine* engine_;     // Указатель на engine (не владеем)
     cl_context context_;                   // OpenCL контекст
     cl_command_queue queue_;               // Command queue
     cl_device_id device_;                 // OpenCL устройство
@@ -403,22 +403,22 @@ private:
     bool plan_created_;                    // Флаг создания плана
     
     // Буферы GPU (persistent для переиспользования)
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_input_;      // Входной буфер (может быть внешним)
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_fft_input_;  // Буфер для FFT (nFFT * beam_count)
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_fft_output_; // Буфер для результатов FFT
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_magnitude_;  // Буфер для magnitude (после post-callback)
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_maxima_;     // Буфер для максимумов (после reduction)
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_input_;      // Входной буфер (может быть внешним)
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_fft_input_;  // Буфер для FFT (nFFT * beam_count)
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_fft_output_; // Буфер для результатов FFT
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_magnitude_;  // Буфер для magnitude (после post-callback)
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_maxima_;     // Буфер для максимумов (после reduction)
     
     // Буферы для отладочной версии (без callback'ов)
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_selected_complex_;    // Выбранные точки спектра
-    std::unique_ptr<gpu::GPUMemoryBuffer> buffer_selected_magnitude_;  // Magnitude выбранных точек
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_selected_complex_;    // Выбранные точки спектра
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> buffer_selected_magnitude_;  // Magnitude выбранных точек
     
     // Userdata буферы для callback'ов
     cl_mem pre_callback_userdata_;         // Userdata для pre-callback
     cl_mem post_callback_userdata_;        // Userdata для post-callback
 
     // Reduction kernel
-    std::shared_ptr<gpu::KernelProgram> reduction_program_;  // Программа для reduction
+    std::shared_ptr<ManagerOpenCL::KernelProgram> reduction_program_;  // Программа для reduction
     cl_kernel reduction_kernel_;           // Kernel для поиска максимумов
     
     // Отладочные kernel'ы (без callback'ов)
@@ -448,12 +448,12 @@ private:
     // ═══════════════════════════════════════════════════════════════
     
     // Кэшируемые буферы для batch processing (создаются один раз)
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_fft_input_;     // FFT input buffer
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_fft_output_;    // FFT output buffer
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_input_buffer_;  // Input copy buffer
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_complex_;   // Selected complex output (DEPRECATED)
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_sel_magnitude_; // Selected magnitude output (DEPRECATED)
-    std::unique_ptr<gpu::GPUMemoryBuffer> batch_maxima_;        // MaxValue output для unified kernel
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> batch_fft_input_;     // FFT input buffer
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> batch_fft_output_;    // FFT output buffer
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> batch_input_buffer_;  // Input copy buffer
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> batch_sel_complex_;   // Selected complex output (DEPRECATED)
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> batch_sel_magnitude_; // Selected magnitude output (DEPRECATED)
+    std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> batch_maxima_;        // MaxValue output для unified kernel
     size_t batch_buffers_size_;                                  // Текущий размер буферов (num_beams)
     
     // Кэшируемый FFT план для batch processing
@@ -466,11 +466,11 @@ private:
     
     // Набор ресурсов для одного параллельного потока
     struct ParallelResources {
-        std::unique_ptr<gpu::GPUMemoryBuffer> fft_input;      // FFT input buffer
-        std::unique_ptr<gpu::GPUMemoryBuffer> fft_output;     // FFT output buffer
-        std::unique_ptr<gpu::GPUMemoryBuffer> sel_complex;    // (DEPRECATED)
-        std::unique_ptr<gpu::GPUMemoryBuffer> sel_magnitude;  // (DEPRECATED)
-        std::unique_ptr<gpu::GPUMemoryBuffer> maxima;         // MaxValue output для unified kernel
+        std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> fft_input;      // FFT input buffer
+        std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> fft_output;     // FFT output buffer
+        std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> sel_complex;    // (DEPRECATED)
+        std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> sel_magnitude;  // (DEPRECATED)
+        std::unique_ptr<ManagerOpenCL::GPUMemoryBuffer> maxima;         // MaxValue output для unified kernel
         clfftPlanHandle plan_handle = 0;                       // FFT план для этого потока
         cl_command_queue queue = nullptr;                      // Command queue для этого потока
         bool initialized = false;

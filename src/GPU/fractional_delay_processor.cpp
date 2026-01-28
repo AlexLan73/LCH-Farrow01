@@ -275,10 +275,10 @@ FractionalDelayProcessor::FractionalDelayProcessor(
     }
     
     // Проверка инициализации OpenCL
-    if (!gpu::OpenCLComputeEngine::IsInitialized()) {
-        gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+    if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
+        ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
         
-        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
+        if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
             throw std::runtime_error(
                 "OpenCLComputeEngine not initialized. Call Initialize() first."
             );
@@ -373,11 +373,11 @@ void FractionalDelayProcessor::Initialize() {
     }
     
     // Получить OpenCL объекты
-    engine_ = &gpu::OpenCLComputeEngine::GetInstance();
-    auto& core = gpu::OpenCLCore::GetInstance();
+    engine_ = &ManagerOpenCL::OpenCLComputeEngine::GetInstance();
+    auto& core = ManagerOpenCL::OpenCLCore::GetInstance();
     context_ = core.GetContext();
     device_ = core.GetDevice();
-    queue_ = gpu::CommandQueuePool::GetNextQueue();
+    queue_ = ManagerOpenCL::CommandQueuePool::GetNextQueue();
     
     // Загрузить kernel
     LoadKernel();
@@ -471,9 +471,9 @@ void FractionalDelayProcessor::CreateBuffers() {
     size_t delays_complex_size = (delays_size + sizeof(Complex) - 1) / sizeof(Complex);
     size_t temp_complex_size = static_cast<size_t>(config_.num_beams) * config_.num_samples;
     
-    buffer_lagrange_ = engine_->CreateBuffer(lagrange_complex_size, gpu::MemoryType::GPU_READ_ONLY);
-    buffer_delays_ = engine_->CreateBuffer(delays_complex_size, gpu::MemoryType::GPU_READ_ONLY);
-    buffer_temp_ = engine_->CreateBuffer(temp_complex_size, gpu::MemoryType::GPU_READ_WRITE);
+    buffer_lagrange_ = engine_->CreateBuffer(lagrange_complex_size, ManagerOpenCL::MemoryType::GPU_READ_ONLY);
+    buffer_delays_ = engine_->CreateBuffer(delays_complex_size, ManagerOpenCL::MemoryType::GPU_READ_ONLY);
+    buffer_temp_ = engine_->CreateBuffer(temp_complex_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
     
     if (config_.verbose) {
         std::cout << "[FDP] GPU буферы созданы ✅\n";

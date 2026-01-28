@@ -22,7 +22,7 @@
 #include <string>
 #include <functional>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // Forward declarations
 class IMemoryBuffer;
@@ -305,5 +305,5 @@ private:
     IMemoryBuffer* buffer_;
 };
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 

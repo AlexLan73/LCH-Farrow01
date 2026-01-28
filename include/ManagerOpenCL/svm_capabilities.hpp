@@ -16,7 +16,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Enum: MemoryStrategy - стратегия выделения памяти
@@ -290,5 +290,5 @@ struct BufferUsageHint {
     }
 };
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 

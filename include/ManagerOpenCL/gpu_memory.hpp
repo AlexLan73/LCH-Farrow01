@@ -16,8 +16,8 @@
  * #include "GPU/gpu_memory.hpp"
  * 
  * // Инициализация
- * gpu::OpenCLComputeEngine::Initialize();
- * auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+ * ManagerOpenCL::OpenCLComputeEngine::Initialize();
+ * auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
  * 
  * // Создание фабрики
  * auto factory = engine.CreateBufferFactory();
@@ -37,7 +37,7 @@
  * 
  * @example Принудительное использование SVM:
  * @code
- * gpu::BufferConfig config = gpu::BufferConfig::SVMOnly();
+ * ManagerOpenCL::BufferConfig config = ManagerOpenCL::BufferConfig::SVMOnly();
  * auto factory = engine.CreateBufferFactory(config);
  * auto svm_buffer = factory->Create(1024);
  * @endcode
@@ -46,8 +46,8 @@
  * @code
  * auto buffer = factory->CreateWithStrategy(
  *     1024,
- *     gpu::MemoryStrategy::SVM_COARSE_GRAIN,
- *     gpu::MemoryType::GPU_READ_WRITE
+ *     ManagerOpenCL::MemoryStrategy::SVM_COARSE_GRAIN,
+ *     ManagerOpenCL::MemoryType::GPU_READ_WRITE
  * );
  * @endcode
  * 
@@ -77,7 +77,7 @@
 
 #include "gpu_memory_buffer.hpp"
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Вспомогательные функции
@@ -155,7 +155,7 @@ public:
     }
 };
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 
 // ════════════════════════════════════════════════════════════════════════════
 // Документация архитектуры

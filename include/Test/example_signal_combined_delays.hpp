@@ -10,7 +10,7 @@
 #include "interface/combined_delay_param.h"
 
 using namespace radar;
-using namespace gpu;
+using namespace ManagerOpenCL;
 
 namespace example_02
 {

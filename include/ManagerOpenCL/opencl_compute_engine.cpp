@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // GPUMemoryBuffer реализация ПЕРЕНЕСЕНА в src/GPU/gpu_memory_manager.cpp
@@ -506,4 +506,4 @@ OpenCLComputeEngine::~OpenCLComputeEngine() {
     // Автоматическая очистка при удалении
 }
 
-}  // namespace gpu
+}  // namespace ManagerOpenCL

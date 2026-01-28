@@ -65,14 +65,14 @@ public:
         std::cout << std::string(50, '-') << "\n";
         
         try {
-            auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+            auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
             
             // Вывести SVM info
             std::cout << engine.GetSVMInfo();
             
             auto caps = engine.GetSVMCapabilities();
             std::cout << "\nRecommended strategy: " 
-                      << gpu::MemoryStrategyToString(caps.GetBestSVMStrategy()) << "\n";
+                      << ManagerOpenCL::MemoryStrategyToString(caps.GetBestSVMStrategy()) << "\n";
             
             std::cout << "✅ PASSED\n\n";
             return true;
@@ -91,7 +91,7 @@ public:
         std::cout << std::string(50, '-') << "\n";
         
         try {
-            auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+            auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
             
             // Создать фабрику
             auto factory = engine.CreateBufferFactory();
@@ -115,8 +115,8 @@ public:
         std::cout << std::string(50, '-') << "\n";
         
         try {
-            auto& engine = gpu::OpenCLComputeEngine::GetInstance();
-            auto factory = engine.CreateBufferFactory(gpu::BufferConfig::Default());
+            auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
+            auto factory = engine.CreateBufferFactory(ManagerOpenCL::BufferConfig::Default());
             
             // Тест для разных размеров
             std::vector<size_t> sizes = {
@@ -127,13 +127,13 @@ public:
             };
             
             for (size_t num_elements : sizes) {
-                size_t size_bytes = num_elements * sizeof(gpu::ComplexFloat);
+                size_t size_bytes = num_elements * sizeof(ManagerOpenCL::ComplexFloat);
                 auto strategy = factory->DetermineStrategy(size_bytes);
                 
                 std::cout << std::setw(12) << num_elements << " elements ("
                           << std::fixed << std::setprecision(2)
                           << (size_bytes / (1024.0 * 1024.0)) << " MB) -> "
-                          << gpu::MemoryStrategyToString(strategy) << "\n";
+                          << ManagerOpenCL::MemoryStrategyToString(strategy) << "\n";
             }
             
             std::cout << "✅ PASSED\n\n";
@@ -153,7 +153,7 @@ public:
         std::cout << std::string(50, '-') << "\n";
         
         try {
-            auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+            auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
             auto factory = engine.CreateBufferFactory();
             
             // Создать буферы разных размеров
@@ -161,9 +161,9 @@ public:
             auto medium_buffer = factory->Create(128 * 1024);  // 1 MB
             auto large_buffer = factory->Create(1024 * 1024);  // 8 MB
             
-            std::cout << "Small:  " << gpu::GetBufferDescription(small_buffer.get()) << "\n";
-            std::cout << "Medium: " << gpu::GetBufferDescription(medium_buffer.get()) << "\n";
-            std::cout << "Large:  " << gpu::GetBufferDescription(large_buffer.get()) << "\n";
+            std::cout << "Small:  " << ManagerOpenCL::GetBufferDescription(small_buffer.get()) << "\n";
+            std::cout << "Medium: " << ManagerOpenCL::GetBufferDescription(medium_buffer.get()) << "\n";
+            std::cout << "Large:  " << ManagerOpenCL::GetBufferDescription(large_buffer.get()) << "\n";
             
             std::cout << factory->GetStatistics();
             
@@ -184,22 +184,22 @@ public:
         std::cout << std::string(50, '-') << "\n";
         
         try {
-            auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+            auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
             auto factory = engine.CreateBufferFactory();
             
             const size_t NUM_ELEMENTS = 10000;
             
             // Создать тестовые данные
-            gpu::ComplexVector input_data(NUM_ELEMENTS);
+            ManagerOpenCL::ComplexVector input_data(NUM_ELEMENTS);
             for (size_t i = 0; i < NUM_ELEMENTS; ++i) {
                 float angle = static_cast<float>(i) * 0.01f;
-                input_data[i] = gpu::ComplexFloat(std::cos(angle), std::sin(angle));
+                input_data[i] = ManagerOpenCL::ComplexFloat(std::cos(angle), std::sin(angle));
             }
             
             // Создать буфер
             auto buffer = factory->Create(NUM_ELEMENTS);
             
-            std::cout << "Buffer: " << gpu::GetBufferDescription(buffer.get()) << "\n";
+            std::cout << "Buffer: " << ManagerOpenCL::GetBufferDescription(buffer.get()) << "\n";
             
             // Записать данные
             auto start_write = std::chrono::high_resolution_clock::now();
@@ -249,23 +249,23 @@ public:
     static void RunBenchmark(size_t num_elements = 1024 * 1024) {
         std::cout << "\n" << std::string(70, '═') << "\n";
         std::cout << "📊 BENCHMARK: " << num_elements << " elements ("
-                  << (num_elements * sizeof(gpu::ComplexFloat) / (1024.0 * 1024.0)) 
+                  << (num_elements * sizeof(ManagerOpenCL::ComplexFloat) / (1024.0 * 1024.0)) 
                   << " MB)\n";
         std::cout << std::string(70, '═') << "\n\n";
         
-        auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+        auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
         
         // Тестовые данные
-        gpu::ComplexVector data(num_elements);
+        ManagerOpenCL::ComplexVector data(num_elements);
         for (size_t i = 0; i < num_elements; ++i) {
-            data[i] = gpu::ComplexFloat(static_cast<float>(i), 0.0f);
+            data[i] = ManagerOpenCL::ComplexFloat(static_cast<float>(i), 0.0f);
         }
         
         // Список стратегий для тестирования
-        std::vector<std::pair<gpu::MemoryStrategy, std::string>> strategies = {
-            {gpu::MemoryStrategy::REGULAR_BUFFER, "REGULAR"},
-            {gpu::MemoryStrategy::SVM_COARSE_GRAIN, "SVM_COARSE"},
-            {gpu::MemoryStrategy::SVM_FINE_GRAIN, "SVM_FINE"}
+        std::vector<std::pair<ManagerOpenCL::MemoryStrategy, std::string>> strategies = {
+            {ManagerOpenCL::MemoryStrategy::REGULAR_BUFFER, "REGULAR"},
+            {ManagerOpenCL::MemoryStrategy::SVM_COARSE_GRAIN, "SVM_COARSE"},
+            {ManagerOpenCL::MemoryStrategy::SVM_FINE_GRAIN, "SVM_FINE"}
         };
         
         std::cout << std::left << std::setw(20) << "Strategy" 
@@ -277,7 +277,7 @@ public:
         for (const auto& [strategy, name] : strategies) {
             try {
                 auto buffer = engine.CreateBufferWithStrategy(
-                    num_elements, strategy, gpu::MemoryType::GPU_READ_WRITE
+                    num_elements, strategy, ManagerOpenCL::MemoryType::GPU_READ_WRITE
                 );
                 
                 // Benchmark write

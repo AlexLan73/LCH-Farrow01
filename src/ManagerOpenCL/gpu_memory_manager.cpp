@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <iomanip>
 
-namespace gpu {
-using gpu::GPUMemoryManager;
+namespace ManagerOpenCL {
+using ManagerOpenCL::GPUMemoryManager;
 
 // ════════════════════════════════════════════════════════════════════════════
 // GPUMemoryBuffer - реализация конструкторов и деструктора
@@ -436,4 +436,4 @@ GPUMemoryManager& GPUMemoryManager::GetInstance() {
     return *instance_;
 }
 
-} // namespace gpu
+} // namespace ManagerOpenCL

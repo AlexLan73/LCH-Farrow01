@@ -10,7 +10,7 @@
 #include <iostream>
 #include <CL/cl.h>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Синглтон GPUMemoryManager - управляет всеми буферами
@@ -62,4 +62,4 @@ private:
     size_t num_buffers_;
 };
 
-} // namespace gpu
+} // namespace ManagerOpenCL

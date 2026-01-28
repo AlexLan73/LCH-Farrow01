@@ -26,7 +26,7 @@
 #include <iostream>
 #include <iomanip>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Struct: BufferConfig - конфигурация для создания буфера
@@ -513,5 +513,5 @@ inline std::string BufferFactory::GetStatistics() const {
     return oss.str();
 }
 
-} // namespace gpu
+} // namespace ManagerOpenCL
 

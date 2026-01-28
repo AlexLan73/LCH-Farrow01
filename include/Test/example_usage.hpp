@@ -25,9 +25,9 @@ void example_basic_lfm() {
         // ✅ ШАГ 1: Инициализация архитектуры (один раз в main)
         std::cout << "Step 1: Initializing OpenCL infrastructure..." << std::endl;
         
-        gpu::OpenCLCore::Initialize(gpu::DeviceType::GPU);
-        gpu::CommandQueuePool::Initialize(4);  // 4 command queues
-        gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        ManagerOpenCL::OpenCLCore::Initialize(ManagerOpenCL::DeviceType::GPU);
+        ManagerOpenCL::CommandQueuePool::Initialize(4);  // 4 command queues
+        ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
         
         std::cout << "✅ OpenCL infrastructure ready\n" << std::endl;
 
@@ -79,7 +79,7 @@ void example_basic_lfm() {
         // ✅ ШАГ 6: Прочитать результаты (опционально)
         std::cout << "Step 6: Reading results from GPU..." << std::endl;
         
-        auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+        auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
         
         // Прочитать все данные (БОЛЬШОЙ ОБЪЁМ!)
         //std::vector<std::complex<float>> result = 
@@ -120,10 +120,10 @@ void example_delayed_lfm() {
 
     try {
         // ✅ Инициализация (если ещё не инициализирована)
-        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
-            gpu::OpenCLCore::Initialize(gpu::DeviceType::GPU);
-            gpu::CommandQueuePool::Initialize(4);
-            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
+            ManagerOpenCL::OpenCLCore::Initialize(ManagerOpenCL::DeviceType::GPU);
+            ManagerOpenCL::CommandQueuePool::Initialize(4);
+            ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
         }
 
         // ✅ Параметры
@@ -194,10 +194,10 @@ void example_multiple_generators() {
 
     try {
         // ✅ Инициализация
-        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
-            gpu::OpenCLCore::Initialize(gpu::DeviceType::GPU);
-            gpu::CommandQueuePool::Initialize(4);  // ← 4 очереди для асинхронности!
-            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
+            ManagerOpenCL::OpenCLCore::Initialize(ManagerOpenCL::DeviceType::GPU);
+            ManagerOpenCL::CommandQueuePool::Initialize(4);  // ← 4 очереди для асинхронности!
+            ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
         }
 
         // ✅ Создать несколько генераторов с разными параметрами
@@ -238,12 +238,12 @@ void example_multiple_generators() {
 
         // ✅ Синхронизация всех
         std::cout << "\nWaiting for all operations to complete..." << std::endl;
-        gpu::CommandQueuePool::FinishAll();
+        ManagerOpenCL::CommandQueuePool::FinishAll();
         
         std::cout << "✅ All signals completed\n" << std::endl;
 
         // Статистика
-        auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+        auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
         std::cout << engine.GetStatistics();
 
         std::cout << "✅ EXAMPLE 3 COMPLETED SUCCESSFULLY\n" << std::endl;

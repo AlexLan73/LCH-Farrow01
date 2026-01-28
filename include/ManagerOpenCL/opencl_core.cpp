@@ -7,7 +7,7 @@
 #include <array>
 #include <cstdio>
 
-namespace gpu {
+namespace ManagerOpenCL {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Static инициализация
@@ -339,4 +339,4 @@ std::string OpenCLCore::GetSVMInfo() const {
     return oss.str();
 }
 
-}  // namespace gpu
+}  // namespace ManagerOpenCL

@@ -16,8 +16,8 @@ void test_basic_with_generator() {
     
     try {
         // Инициализация OpenCL
-        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
-            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
+            ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
         }
         
         // ═══════════════════════════════════════════════════════════════════
@@ -179,8 +179,8 @@ void test_process_new_small() {
     
     try {
         // Инициализация OpenCL
-        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
-            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
+            ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
         }
         
         // Маленькие параметры - должна использоваться полная обработка
@@ -242,8 +242,8 @@ void test_process_new_large() {
     
     try {
         // Инициализация OpenCL
-        if (!gpu::OpenCLComputeEngine::IsInitialized()) {
-            gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
+        if (!ManagerOpenCL::OpenCLComputeEngine::IsInitialized()) {
+            ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
         }
         
         // Большие параметры - должен использоваться batch processing

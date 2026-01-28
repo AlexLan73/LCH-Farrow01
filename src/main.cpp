@@ -55,8 +55,8 @@ int main(int argc, char* argv[]) {
  * !!! ВАЖНО !!!
  * Примеры использования GeneratorGPU с signal_sinusoids 
  * 
-    gpu::OpenCLComputeEngine::Initialize(gpu::DeviceType::GPU);
-    auto& engine = gpu::OpenCLComputeEngine::GetInstance();
+    ManagerOpenCL::OpenCLComputeEngine::Initialize(ManagerOpenCL::DeviceType::GPU);
+    auto& engine = ManagerOpenCL::OpenCLComputeEngine::GetInstance();
 
     // Показать информацию о девайсе
     std::cout << engine.GetDeviceInfo();
@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
     // ... код программы ...
 
     // Очистка (опционально, вызывается в деструкторе)
-    gpu::OpenCLComputeEngine::Cleanup();
+    ManagerOpenCL::OpenCLComputeEngine::Cleanup();
 
     std::cout << "\n╔══════════════════════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║        GeneratorGPU Examples (NEW ARCHITECTURE)                  ║" << std::endl;
@@ -90,8 +90,8 @@ int main(int argc, char* argv[]) {
  * 
  int inicial_opencl_manager(){
   try {
-    gpu::OpenCLManager::Initialize(CL_DEVICE_TYPE_GPU);
-    auto& opencl_ = gpu::OpenCLManager::GetInstance();
+    ManagerOpenCL::OpenCLManager::Initialize(CL_DEVICE_TYPE_GPU);
+    auto& opencl_ = ManagerOpenCL::OpenCLManager::GetInstance();
       
     std::cout << "✅ OpenCL Manager инициализирован\n";
     std::cout << opencl_.GetDeviceInfo() << "\n";
@@ -161,7 +161,7 @@ LFMParameters inicial_params() {
     t_generator_->gpu_to_cpu(signal_base_);
 //    t_generator_->gpu_to_cpu(signal_delay_);
 
-    gpu::GPUMemoryManager::Initialize();
+    ManagerOpenCL::GPUMemoryManager::Initialize();
     examples::RunAllExamples();
 
 
