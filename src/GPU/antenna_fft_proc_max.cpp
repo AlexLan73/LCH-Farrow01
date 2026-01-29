@@ -20,9 +20,13 @@ namespace antenna_fft {
 // Структура для хранения максимумов (совпадает с kernel структурой)
 struct MaxValue {
     cl_uint index;
+    float real;               // Вещественная часть
+    float imag;               // Мнимая часть
     float magnitude;
     float phase;
-    cl_uint pad;
+    float freq_offset;        // Смещение в долях бина (параболическая интерполяция)
+    float refined_frequency;  // Уточнённая частота в Гц
+    cl_uint pad;              // Выравнивание до 32 байт
 };
 
 constexpr size_t kMaxReductionPoints = 1024;
@@ -289,8 +293,8 @@ bool AntennaFFTProcMax::CheckAvailableMemory(size_t required_memory, double thre
     std::cout << "  │  MEMORY CHECK                                               │\n";
     std::cout << "  └─────────────────────────────────────────────────────────────┘\n";
     printf("  │  GPU Global Memory      │  %10zu MB  │\n", global_memory / (1024 * 1024));
-    printf("  │  Threshold (%.0f%%)        │  %10zu MB  │\n", threshold * 100, available_memory / (1024 * 1024));
-    printf("  │  Required Memory         │  %10zu MB  │\n", required_memory / (1024 * 1024));
+    printf("  │  Threshold (%.0f%%)       │  %10zu MB  │\n", threshold * 100, available_memory / (1024 * 1024));
+    printf("  │  Required Memory        │  %10zu MB  │\n", required_memory / (1024 * 1024));
     printf("  │  Status                  │  %s  │\n", 
            required_memory <= available_memory ? "    OK ✅    " : "  BATCH ⚠️  ");
     std::cout << "\n";
@@ -326,7 +330,7 @@ AntennaFFTResult AntennaFFTProcMax::ProcessNew(cl_mem input_signal) {
     bool memory_ok = CheckAvailableMemory(required_memory, batch_config_.memory_usage_limit);
     
     // 3. Выбрать стратегию
-    if (memory_ok) {
+    if (memory_ok ) {
         std::cout << "  → Стратегия: SINGLE BATCH (полная обработка)\n";
         std::cout << "  → Вызываем Process()\n\n";
         last_used_batch_mode_ = false;
@@ -404,10 +408,10 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatching(cl_mem input_signal) {
         // БЕЗ batch_input_buffer_ - читаем напрямую из input_signal!
         
         // Размер буфера для MaxValue результатов (новый unified kernel)
-        // MaxValue: { uint index, float magnitude, float phase, uint pad } = 16 bytes
+        // MaxValue: { uint index, real, imag, magnitude, phase, freq_offset, refined_frequency, pad } = 32 bytes
         size_t maxima_buf_elements = max_batch_beams * params_.max_peaks_count;
         // Выравниваем на размер complex (8 bytes) для создания буфера
-        size_t maxima_complex_elements = (maxima_buf_elements * 16 + 7) / 8;
+        size_t maxima_complex_elements = (maxima_buf_elements * 32 + 7) / 8;
         
         batch_fft_input_ = engine_->CreateBuffer(fft_buf_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
         batch_fft_output_ = engine_->CreateBuffer(fft_buf_size, ManagerOpenCL::MemoryType::GPU_READ_WRITE);
@@ -656,14 +660,16 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
     
     cl_uint search_range = static_cast<cl_uint>(params_.out_count_points_fft);
     cl_uint max_peaks = static_cast<cl_uint>(params_.max_peaks_count);
+    float sample_rate = 12.0e6f;  // 12 МГц по умолчанию
     
-    // Новый формат kernel'а: (fft_output, maxima_output, beam_count, nfft, search_range, max_peaks_count)
+    // Новый формат kernel'а: (fft_output, maxima_output, beam_count, nfft, search_range, max_peaks_count, sample_rate)
     err = clSetKernelArg(post_kernel_, 0, sizeof(cl_mem), &fft_out);
     err |= clSetKernelArg(post_kernel_, 1, sizeof(cl_mem), &maxima_out);
     err |= clSetKernelArg(post_kernel_, 2, sizeof(cl_uint), &batch_beam_count);
     err |= clSetKernelArg(post_kernel_, 3, sizeof(cl_uint), &nfft);
     err |= clSetKernelArg(post_kernel_, 4, sizeof(cl_uint), &search_range);
     err |= clSetKernelArg(post_kernel_, 5, sizeof(cl_uint), &max_peaks);
+    err |= clSetKernelArg(post_kernel_, 6, sizeof(float), &sample_rate);
     
     if (err != CL_SUCCESS) {
         clReleaseEvent(event_padding);
@@ -722,11 +728,15 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
     // Читаем MaxValue структуры: { uint index, float magnitude, float phase }
     size_t maxima_count = num_beams * params_.max_peaks_count;
     
-    // Структура MaxValue совпадает с GPU (16 bytes с pad!)
+    // Структура MaxValue совпадает с GPU kernel (32 bytes)
     struct MaxValue {
         cl_uint index;
+        cl_float real;
+        cl_float imag;
         cl_float magnitude;
         cl_float phase;
+        cl_float freq_offset;
+        cl_float refined_frequency;
         cl_uint pad;
     };
     std::vector<MaxValue> maxima_result(maxima_count);
@@ -749,9 +759,17 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatch(
             if (mv.magnitude > 0.0f) {
                 FFTMaxResult fmr;
                 fmr.index_point = mv.index;
+                fmr.real = mv.real;
+                fmr.imag = mv.imag;
                 fmr.amplitude = mv.magnitude;
                 fmr.phase = mv.phase;  // Уже в градусах от GPU kernel!
                 beam_result.max_values.push_back(fmr);
+                
+                // Сохраняем freq_offset и refined_frequency из первого пика
+                if (i == 0) {
+                    beam_result.freq_offset = mv.freq_offset;
+                    beam_result.refined_frequency = mv.refined_frequency;
+                }
             }
         }
         
@@ -888,6 +906,7 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     cl_mem maxima_output = buffer_maxima_->Get();
     
     cl_uint max_peaks = static_cast<cl_uint>(params_.max_peaks_count);
+    float sample_rate = 12.0e6f;  // 12 МГц по умолчанию
     
     err = clSetKernelArg(post_kernel_, 0, sizeof(cl_mem), &fft_output);
     err |= clSetKernelArg(post_kernel_, 1, sizeof(cl_mem), &maxima_output);
@@ -895,6 +914,7 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
     err |= clSetKernelArg(post_kernel_, 3, sizeof(cl_uint), &nfft);
     err |= clSetKernelArg(post_kernel_, 4, sizeof(cl_uint), &search_range);
     err |= clSetKernelArg(post_kernel_, 5, sizeof(cl_uint), &max_peaks);
+    err |= clSetKernelArg(post_kernel_, 6, sizeof(float), &sample_rate);
     
     if (err != CL_SUCCESS) {
         clReleaseEvent(event_upload);
@@ -968,9 +988,17 @@ AntennaFFTResult AntennaFFTProcMax::Process(cl_mem input_signal) {
             if (mv.magnitude > 0.0f) {
                 FFTMaxResult fmr;
                 fmr.index_point = mv.index;
+                fmr.real = mv.real;
+                fmr.imag = mv.imag;
                 fmr.amplitude = mv.magnitude;
                 fmr.phase = mv.phase;
                 beam_result.max_values.push_back(fmr);
+                
+                // Сохраняем freq_offset и refined_frequency из первого пика
+                if (i == 0) {
+                    beam_result.freq_offset = mv.freq_offset;
+                    beam_result.refined_frequency = mv.refined_frequency;
+                }
             }
         }
         result.results.push_back(std::move(beam_result));
@@ -1403,21 +1431,26 @@ void AntennaFFTProcMax::CreatePaddingKernel() {
 
 void AntennaFFTProcMax::CreatePostKernel() {
     // ═══════════════════════════════════════════════════════════════════════════
-    // ОБЪЕДИНЁННЫЙ KERNEL: magnitude + поиск max + фаза (всё в одном!)
+    // ОБЪЕДИНЁННЫЙ KERNEL: magnitude + поиск max + фаза + Re/Im + параболическая интерполяция
     // ═══════════════════════════════════════════════════════════════════════════
     // 
     // Один work-group = один луч
     // Каждый поток вычисляет magnitude для своих точек
     // Затем редукция для поиска top-N максимумов
-    // Фаза вычисляется ТОЛЬКО для найденных максимумов
+    // Для всех пиков: Re, Im, amplitude, phase
+    // Для peak[0]: параболическая интерполяция -> freq_offset, refined_frequency
     //
     const char* kernel_source = R"CL(
         // Структура результата (должна совпадать с C++ MaxValue)
         typedef struct {
             uint index;
+            float real;               // Вещественная часть
+            float imag;               // Мнимая часть
             float magnitude;
             float phase;
-            uint pad;
+            float freq_offset;        // Смещение в долях бина (параболическая интерполяция)
+            float refined_frequency;  // Уточнённая частота в Гц
+            uint pad;                 // Выравнивание
         } MaxValue;
         
         __kernel void post_kernel(
@@ -1426,7 +1459,8 @@ void AntennaFFTProcMax::CreatePostKernel() {
             uint beam_count,
             uint nFFT,
             uint search_range,                     // Сколько точек анализировать (фильтр)
-            uint max_peaks_count                   // Сколько максимумов искать (3, 5, 7...)
+            uint max_peaks_count,                  // Сколько максимумов искать (3, 5, 7...)
+            float sample_rate                      // Частота дискретизации (по умолчанию 12 МГц)
         ) {
             uint beam_idx = get_group_id(0);
             uint lid = get_local_id(0);
@@ -1503,21 +1537,71 @@ void AntennaFFTProcMax::CreatePostKernel() {
                     }
                 }
                 
-                // Записать результаты
+                // ═══════════════════════════════════════════════════════════════
+                // ЭТАП 3: Записать результаты с Re/Im и параболической интерполяцией
+                // ═══════════════════════════════════════════════════════════════
+                
+                // Ширина бина в Гц
+                float bin_width = sample_rate / (float)nFFT;
+                
                 for (uint peak = 0; peak < max_peaks_count && peak < 16; ++peak) {
                     uint out_idx = beam_idx * max_peaks_count + peak;
                     
                     MaxValue mv;
                     mv.index = found_indices[peak];
+                    
+                    // Re и Im для всех пиков
+                    float2 c = found_complex[peak];
+                    mv.real = c.x;
+                    mv.imag = c.y;
                     mv.magnitude = found_mags[peak];
                     
-                    // Фаза вычисляется ТОЛЬКО для максимумов!
-                    float2 c = found_complex[peak];
+                    // Фаза в градусах
                     float phase_rad = atan2(c.y, c.x);
-                    mv.phase = phase_rad * 57.2957795131f;  // радианы -> градусы
+                    mv.phase = phase_rad * 57.2957795131f;
+                    
+                    // По умолчанию: без интерполяции
+                    mv.freq_offset = 0.0f;
+                    mv.refined_frequency = (float)mv.index * bin_width;
+                    
+                    // ═══════════════════════════════════════════════════════════
+                    // ПАРАБОЛИЧЕСКАЯ ИНТЕРПОЛЯЦИЯ: только для peak == 0!
+                    // ═══════════════════════════════════════════════════════════
+                    if (peak == 0) {
+                        uint center_idx = found_indices[0];
+                        
+                        // Граничная проверка
+                        if (center_idx > 0 && center_idx < search_range - 1) {
+                            uint base_idx = beam_idx * nFFT;
+                            
+                            // Читаем соседние точки из спектра
+                            float2 left_val = fft_output[base_idx + center_idx - 1];
+                            float2 right_val = fft_output[base_idx + center_idx + 1];
+                            
+                            float y_left = sqrt(left_val.x * left_val.x + left_val.y * left_val.y);
+                            float y_center = found_mags[0];
+                            float y_right = sqrt(right_val.x * right_val.x + right_val.y * right_val.y);
+                            
+                            // Три-точечная параболическая интерполяция
+                            // offset = 0.5 * (y_left - y_right) / (y_left - 2*y_center + y_right)
+                            float denom = y_left - 2.0f * y_center + y_right;
+                            
+                            if (fabs(denom) > 1e-10f) {
+                                float offset = 0.5f * (y_left - y_right) / denom;
+                                
+                                // Ограничить offset диапазоном [-0.5, +0.5]
+                                offset = clamp(offset, -0.5f, 0.5f);
+                                
+                                mv.freq_offset = offset;
+                                
+                                // Уточнённая частота в Гц
+                                float refined_index = (float)center_idx + offset;
+                                mv.refined_frequency = refined_index * bin_width;
+                            }
+                        }
+                    }
                     
                     mv.pad = 0;
-                    
                     maxima_output[out_idx] = mv;
                 }
             }
@@ -1600,14 +1684,18 @@ void AntennaFFTProcMax::CreateParallelKernels(size_t num_streams) {
     )CL";
     
     // ═══════════════════════════════════════════════════════════════════════════
-    // POST KERNEL SOURCE (UNIFIED: magnitude + поиск max + фаза)
+    // POST KERNEL SOURCE (UNIFIED: magnitude + поиск max + фаза + Re/Im + параболическая интерполяция)
     // ═══════════════════════════════════════════════════════════════════════════
     const char* post_source = R"CL(
-        // Структура результата (должна совпадать с C++ MaxValue - 16 bytes с pad!)
+        // Структура результата (должна совпадать с C++ MaxValue)
         typedef struct {
             uint index;
+            float real;
+            float imag;
             float magnitude;
             float phase;
+            float freq_offset;
+            float refined_frequency;
             uint pad;
         } MaxValue;
         
@@ -1617,7 +1705,8 @@ void AntennaFFTProcMax::CreateParallelKernels(size_t num_streams) {
             uint beam_count,
             uint nFFT,
             uint search_range,                     // Сколько точек анализировать
-            uint max_peaks_count                   // Сколько максимумов искать
+            uint max_peaks_count,                  // Сколько максимумов искать
+            float sample_rate                      // Частота дискретизации (12 МГц)
         ) {
             uint beam_idx = get_group_id(0);
             uint lid = get_local_id(0);
@@ -1683,26 +1772,64 @@ void AntennaFFTProcMax::CreateParallelKernels(size_t num_streams) {
                         found_complex[peak] = (float2)(0.0f, 0.0f);
                     }
                 }
-            }
-            barrier(CLK_LOCAL_MEM_FENCE);
-            
-            // ЭТАП 3: Записать результаты с вычислением фазы
-            if (lid < max_peaks_count && lid < 16) {
-                MaxValue mv;
-                mv.index = found_indices[lid];
-                mv.magnitude = found_mags[lid];
-                mv.pad = 0;
                 
-                float2 c = found_complex[lid];
-                if (found_mags[lid] > 0.0f) {
-                    float phase_rad = atan2(c.y, c.x);
-                    mv.phase = phase_rad * 57.29577951f;  // rad -> degrees
-                } else {
-                    mv.phase = 0.0f;
+                // ═══════════════════════════════════════════════════════════════
+                // ЭТАП 3: Записать результаты с Re/Im и параболической интерполяцией
+                // ═══════════════════════════════════════════════════════════════
+                
+                float bin_width = sample_rate / (float)nFFT;
+                
+                for (uint peak = 0; peak < max_peaks_count && peak < 16; ++peak) {
+                    uint out_idx = beam_idx * max_peaks_count + peak;
+                    
+                    MaxValue mv;
+                    mv.index = found_indices[peak];
+                    
+                    float2 c = found_complex[peak];
+                    mv.real = c.x;
+                    mv.imag = c.y;
+                    mv.magnitude = found_mags[peak];
+                    
+                    if (found_mags[peak] > 0.0f) {
+                        float phase_rad = atan2(c.y, c.x);
+                        mv.phase = phase_rad * 57.29577951f;
+                    } else {
+                        mv.phase = 0.0f;
+                    }
+                    
+                    mv.freq_offset = 0.0f;
+                    mv.refined_frequency = (float)mv.index * bin_width;
+                    
+                    // Параболическая интерполяция ТОЛЬКО для peak == 0
+                    if (peak == 0 && found_mags[0] > 0.0f) {
+                        uint center_idx = found_indices[0];
+                        
+                        if (center_idx > 0 && center_idx < search_range - 1) {
+                            uint base_idx = beam_idx * nFFT;
+                            
+                            float2 left_val = fft_output[base_idx + center_idx - 1];
+                            float2 right_val = fft_output[base_idx + center_idx + 1];
+                            
+                            float y_left = sqrt(left_val.x * left_val.x + left_val.y * left_val.y);
+                            float y_center = found_mags[0];
+                            float y_right = sqrt(right_val.x * right_val.x + right_val.y * right_val.y);
+                            
+                            float denom = y_left - 2.0f * y_center + y_right;
+                            
+                            if (fabs(denom) > 1e-10f) {
+                                float offset = 0.5f * (y_left - y_right) / denom;
+                                offset = clamp(offset, -0.5f, 0.5f);
+                                
+                                mv.freq_offset = offset;
+                                float refined_index = (float)center_idx + offset;
+                                mv.refined_frequency = refined_index * bin_width;
+                            }
+                        }
+                    }
+                    
+                    mv.pad = 0;
+                    maxima_output[out_idx] = mv;
                 }
-                
-                uint out_idx = beam_idx * max_peaks_count + lid;
-                maxima_output[out_idx] = mv;
             }
         }
     )CL";
@@ -2195,6 +2322,8 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
             if (mv.index != UINT_MAX && mv.magnitude > 0.0f) {
                 FFTMaxResult max_result;
                 max_result.index_point = mv.index;
+                max_result.real = mv.real;
+                max_result.imag = mv.imag;
                 max_result.amplitude = mv.magnitude;
                 max_result.phase = mv.phase;
                 beam_out.push_back(max_result);
@@ -2325,6 +2454,8 @@ std::vector<std::vector<FFTMaxResult>> AntennaFFTProcMax::FindMaximaAllBeamsOnGP
             if (mv.index != UINT_MAX && mv.magnitude > 0.0f) {
                 FFTMaxResult max_result;
                 max_result.index_point = mv.index;
+                max_result.real = mv.real;
+                max_result.imag = mv.imag;
                 max_result.amplitude = mv.magnitude;
                 max_result.phase = mv.phase;  // Фаза уже в градусах!
                 beam_out.push_back(max_result);
@@ -2362,13 +2493,22 @@ void AntennaFFTProcMax::PrintResults(const AntennaFFTResult& result) const {
     std::cout << "nFFT: " << result.nFFT << "\n\n";
     
     for (size_t i = 0; i < result.results.size(); ++i) {
+        const auto& beam = result.results[i];
         std::cout << "Beam " << i << ":\n";
-        std::cout << "  Max Values Found: " << result.results[i].max_values.size() << "\n";
-        for (size_t j = 0; j < result.results[i].max_values.size(); ++j) {
-            const auto& max_val = result.results[i].max_values[j];
+        std::cout << "  Refined Frequency: " << std::fixed << std::setprecision(4) << beam.refined_frequency << " Hz";
+        if (!beam.max_values.empty()) {
+            float refined_bin = static_cast<float>(beam.max_values[0].index_point) + beam.freq_offset;
+            std::cout << " (bin " << refined_bin << ")";
+        }
+        std::cout << "\n";
+        std::cout << "  Max Values Found: " << beam.max_values.size() << "\n";
+        for (size_t j = 0; j < beam.max_values.size(); ++j) {
+            const auto& max_val = beam.max_values[j];
             std::cout << "    [" << j << "] Index: " << max_val.index_point 
-                      << ", Amplitude: " << std::fixed << std::setprecision(6) << max_val.amplitude
-                      << ", Phase: " << max_val.phase << "°\n";
+                      << ", Amplitude: " << std::fixed << std::setprecision(2) << max_val.amplitude
+                      << ", Phase: " << max_val.phase << "°"
+                      << ", Re: " << max_val.real
+                      << ", Im: " << max_val.imag << "\n";
         }
         std::cout << "\n";
     }
@@ -2427,19 +2567,28 @@ void AntennaFFTProcMax::SaveResultsToFile(const AntennaFFTResult& result, const 
     md_file << "Total Time:         " << std::fixed << std::setprecision(3) << last_profiling_.total_time_ms << " ms\n\n";
 
     md_file << "## Results by Beam\n\n";
-    md_file << "| Beam | Index | Amplitude | Phase (deg) |\n";
-    md_file << "|------|-------|-----------|-------------|\n";
+    md_file << "| Beam | Peak | Index | Amplitude | Phase (deg) | Re | Im | Refined Freq (Hz) |\n";
+    md_file << "|------|------|-------|-----------|-------------|----|----|-------------------|\n";
 
     for (size_t i = 0; i < result.results.size(); ++i) {
         const auto& beam_result = result.results[i];
         if (beam_result.max_values.empty()) {
-            md_file << "| " << i << " | - | - | - |\n";
+            md_file << "| " << i << " | - | - | - | - | - | - | - |\n";
         } else {
             for (size_t j = 0; j < beam_result.max_values.size(); ++j) {
                 const auto& max_val = beam_result.max_values[j];
-                md_file << "| " << i << " | " << max_val.index_point
-                        << " | " << std::fixed << std::setprecision(6) << max_val.amplitude
-                        << " | " << std::setprecision(2) << max_val.phase << " |\n";
+                md_file << "| " << i << " | " << (j + 1) << " | " << max_val.index_point
+                        << " | " << std::fixed << std::setprecision(2) << max_val.amplitude
+                        << " | " << std::setprecision(2) << max_val.phase
+                        << " | " << std::setprecision(2) << max_val.real
+                        << " | " << std::setprecision(2) << max_val.imag;
+                // Refined frequency только для первого пика
+                if (j == 0) {
+                    md_file << " | " << std::setprecision(4) << beam_result.refined_frequency;
+                } else {
+                    md_file << " | -";
+                }
+                md_file << " |\n";
             }
         }
     }
@@ -2490,13 +2639,17 @@ void AntennaFFTProcMax::SaveResultsToFile(const AntennaFFTResult& result, const 
         json_file << "    {\n";
         json_file << "      \"beam_index\": " << i << ",\n";
         json_file << "      \"v_fft\": " << beam_result.v_fft << ",\n";
+        json_file << "      \"freq_offset\": " << std::fixed << std::setprecision(6) << beam_result.freq_offset << ",\n";
+        json_file << "      \"refined_frequency\": " << std::fixed << std::setprecision(4) << beam_result.refined_frequency << ",\n";
         json_file << "      \"max_values\": [\n";
 
         for (size_t j = 0; j < beam_result.max_values.size(); ++j) {
             const auto& max_val = beam_result.max_values[j];
             json_file << "        {\n";
             json_file << "          \"index_point\": " << max_val.index_point << ",\n";
-            json_file << "          \"amplitude\": " << std::fixed << std::setprecision(6) << max_val.amplitude << ",\n";
+            json_file << "          \"real\": " << std::fixed << std::setprecision(2) << max_val.real << ",\n";
+            json_file << "          \"imag\": " << std::fixed << std::setprecision(2) << max_val.imag << ",\n";
+            json_file << "          \"amplitude\": " << std::fixed << std::setprecision(2) << max_val.amplitude << ",\n";
             json_file << "          \"phase\": " << std::fixed << std::setprecision(2) << max_val.phase << "\n";
             json_file << "        }";
             if (j < beam_result.max_values.size() - 1) json_file << ",";
@@ -2602,10 +2755,10 @@ void AntennaFFTProcMax::InitializeParallelResources(size_t max_beams_per_stream,
     
     size_t fft_buf_size = max_beams_per_stream * nFFT_;
     // Размер буфера для MaxValue результатов (новый unified kernel)
-    // MaxValue: { uint index, float magnitude, float phase, uint pad } = 16 bytes
+    // MaxValue: { uint index, real, imag, magnitude, phase, freq_offset, refined_frequency, pad } = 32 bytes
     size_t maxima_buf_elements = max_beams_per_stream * params_.max_peaks_count;
     // Выравниваем на размер complex (8 bytes) для создания буфера
-    size_t maxima_complex_elements = (maxima_buf_elements * 16 + 7) / 8;
+    size_t maxima_complex_elements = (maxima_buf_elements * 32 + 7) / 8;
     
     for (size_t i = 0; i < num_parallel_streams_; ++i) {
         auto& res = parallel_resources_[i];
@@ -2780,9 +2933,10 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatchParallelNoWait(
         return {};
     }
     
-    // STEP 3: Post-kernel (unified: magnitude + find maxima + phase)
+    // STEP 3: Post-kernel (unified: magnitude + find maxima + phase + parabolic interp)
     cl_uint search_range = static_cast<cl_uint>(params_.out_count_points_fft);
     cl_uint max_peaks = static_cast<cl_uint>(params_.max_peaks_count);
+    float sample_rate = 12.0e6f;  // 12 МГц по умолчанию
     
     err = clSetKernelArg(pst_kernel, 0, sizeof(cl_mem), &fft_out);
     err |= clSetKernelArg(pst_kernel, 1, sizeof(cl_mem), &maxima_out);
@@ -2790,6 +2944,7 @@ std::vector<FFTResult> AntennaFFTProcMax::ProcessBatchParallelNoWait(
     err |= clSetKernelArg(pst_kernel, 3, sizeof(cl_uint), &nfft);
     err |= clSetKernelArg(pst_kernel, 4, sizeof(cl_uint), &search_range);
     err |= clSetKernelArg(pst_kernel, 5, sizeof(cl_uint), &max_peaks);
+    err |= clSetKernelArg(pst_kernel, 6, sizeof(float), &sample_rate);
     
     if (err != CL_SUCCESS) {
         std::cerr << "  ❌ ProcessBatchParallelNoWait: set post kernel args failed: " << err << "\n";
@@ -2844,9 +2999,13 @@ std::vector<FFTResult> AntennaFFTProcMax::ReadBatchResults(
     
     struct MaxValue {
         cl_uint index;
+        cl_float real;
+        cl_float imag;
         cl_float magnitude;
         cl_float phase;
-        cl_uint pad;  // Выравнивание до 16 байт
+        cl_float freq_offset;
+        cl_float refined_frequency;
+        cl_uint pad;  // Выравнивание до 32 байт
     };
     std::vector<MaxValue> maxima_result(maxima_count);
     
@@ -2864,9 +3023,17 @@ std::vector<FFTResult> AntennaFFTProcMax::ReadBatchResults(
             if (mv.magnitude > 0.0f) {
                 FFTMaxResult fmr;
                 fmr.index_point = mv.index;
+                fmr.real = mv.real;
+                fmr.imag = mv.imag;
                 fmr.amplitude = mv.magnitude;
                 fmr.phase = mv.phase;  // Уже в градусах от GPU kernel!
                 beam_result.max_values.push_back(fmr);
+                
+                // Сохраняем freq_offset и refined_frequency из первого пика
+                if (i == 0) {
+                    beam_result.freq_offset = mv.freq_offset;
+                    beam_result.refined_frequency = mv.refined_frequency;
+                }
             }
         }
         
@@ -3103,8 +3270,12 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
         
         struct MaxValue {
             cl_uint index;
+            cl_float real;
+            cl_float imag;
             cl_float magnitude;
             cl_float phase;
+            cl_float freq_offset;
+            cl_float refined_frequency;
             cl_uint pad;
         };
         std::vector<MaxValue> maxima_result(maxima_count);
@@ -3124,9 +3295,17 @@ AntennaFFTResult AntennaFFTProcMax::ProcessWithBatchingNew(cl_mem input_signal) 
                 if (mv.magnitude > 0.0f) {
                     FFTMaxResult fmr;
                     fmr.index_point = mv.index;
+                    fmr.real = mv.real;
+                    fmr.imag = mv.imag;
                     fmr.amplitude = mv.magnitude;
                     fmr.phase = mv.phase;  // Уже в градусах от GPU kernel!
                     beam_result.max_values.push_back(fmr);
+                    
+                    // Сохраняем freq_offset и refined_frequency из первого пика
+                    if (k == 0) {
+                        beam_result.freq_offset = mv.freq_offset;
+                        beam_result.refined_frequency = mv.refined_frequency;
+                    }
                 }
             }
         }

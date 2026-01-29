@@ -182,6 +182,21 @@ private:
     PrintOptions options_;
     
     /**
+     * @brief Форматировать частоту в Гц/кГц/МГц для читаемости
+     */
+    static std::string FormatFrequency(float freq_hz) {
+        char buf[64];
+        if (freq_hz >= 1e6f) {
+            snprintf(buf, sizeof(buf), "%.4f МГц", freq_hz / 1e6f);
+        } else if (freq_hz >= 1e3f) {
+            snprintf(buf, sizeof(buf), "%.4f кГц", freq_hz / 1e3f);
+        } else {
+            snprintf(buf, sizeof(buf), "%.4f Гц", freq_hz);
+        }
+        return std::string(buf);
+    }
+    
+    /**
      * @brief Вывести ВСЕ пики для каждого луча
      */
     void PrintResultsAllPeaks(const AntennaFFTResult& result, size_t max_peaks_count) const {
@@ -192,22 +207,31 @@ private:
         for (size_t beam_idx = 0; beam_idx < beams_to_show; ++beam_idx) {
             const auto& beam = result.results[beam_idx];
             
-            printf("  ╔═══════════════════════════════════════════════════════════╗\n");
-            printf("  ║  Луч %3zu                                                  ║\n", beam_idx);
-            printf("  ╠═══════════════════════════════════════════════════════════╣\n");
-            printf("  ║  Peak  │  Index  │   Amplitude    │   Phase (°)           ║\n");
-            printf("  ╠────────┼─────────┼────────────────┼───────────────────────╣\n");
+            printf("  ╔════════════════════════════════════════════════════════════════════════════════════════════╗\n");
+            printf("  ║  Луч %3zu                                                                                   ║\n", beam_idx);
+            
+            // Вывод уточнённой частоты (параболическая интерполяция)
+            if (!beam.max_values.empty()) {
+                float refined_bin = static_cast<float>(beam.max_values[0].index_point) + beam.freq_offset;
+                std::string freq_str = FormatFrequency(beam.refined_frequency);
+                printf("  ║  Refined Frequency: %s (bin index: %.4f)                                   ║\n", 
+                       freq_str.c_str(), refined_bin);
+            }
+            
+            printf("  ╠════════════════════════════════════════════════════════════════════════════════════════════╣\n");
+            printf("  ║  Peak  │  Index  │   Amplitude    │  Phase (°)  │       Re       │       Im       ║\n");
+            printf("  ╠────────┼─────────┼────────────────┼─────────────┼────────────────┼────────────────╣\n");
             
             if (beam.max_values.empty()) {
-                printf("  ║  (нет данных)                                             ║\n");
+                printf("  ║  (нет данных)                                                                              ║\n");
             } else {
                 for (size_t i = 0; i < beam.max_values.size() && i < max_peaks_count; ++i) {
                     const auto& mv = beam.max_values[i];
-                    printf("  ║  %4zu  │  %5u  │  %12.2f  │  %9.2f            ║\n",
-                           i + 1, mv.index_point, mv.amplitude, mv.phase);
+                    printf("  ║  %4zu  │  %5zu  │  %12.2f  │  %9.2f  │  %12.2f  │  %12.2f  ║\n",
+                           i + 1, mv.index_point, mv.amplitude, mv.phase, mv.real, mv.imag);
                 }
             }
-            printf("  ╚═══════════════════════════════════════════════════════════╝\n\n");
+            printf("  ╚════════════════════════════════════════════════════════════════════════════════════════════╝\n\n");
         }
         
         if (result.results.size() > beams_to_show) {
@@ -220,9 +244,9 @@ private:
      * @brief Вывести только первый (максимальный) пик для каждого луча
      */
     void PrintResultsFirstPeak(const AntennaFFTResult& result) const {
-        printf("  ┌────────┬─────────┬────────────────┬─────────────┐\n");
-        printf("  │  Луч   │  Index  │   Amplitude    │   Phase (°) │\n");
-        printf("  ├────────┼─────────┼────────────────┼─────────────┤\n");
+        printf("  ┌────────┬─────────┬────────────────┬─────────────┬──────────────────────┐\n");
+        printf("  │  Луч   │  Index  │   Amplitude    │   Phase (°) │  Refined Frequency   │\n");
+        printf("  ├────────┼─────────┼────────────────┼─────────────┼──────────────────────┤\n");
         
         const size_t beams_to_show = (options_.max_beams_to_display == 0) 
                                       ? result.results.size() 
@@ -232,15 +256,16 @@ private:
             const auto& beam = result.results[beam_idx];
             if (!beam.max_values.empty()) {
                 const auto& mv = beam.max_values[0];
-                printf("  │  %4zu  │  %5u  │  %12.4f  │  %9.2f  │\n", 
-                       beam_idx, mv.index_point, mv.amplitude, mv.phase);
+                std::string freq_str = FormatFrequency(beam.refined_frequency);
+                printf("  │  %4zu  │  %5zu  │  %12.4f  │  %9.2f  │  %18s  │\n", 
+                       beam_idx, mv.index_point, mv.amplitude, mv.phase, freq_str.c_str());
             }
         }
         
         if (result.results.size() > beams_to_show) {
-            printf("  │  ...   │   ...   │      ...       │     ...     │\n");
+            printf("  │  ...   │   ...   │      ...       │     ...     │        ...           │\n");
         }
-        printf("  └────────┴─────────┴────────────────┴─────────────┘\n");
+        printf("  └────────┴─────────┴────────────────┴─────────────┴──────────────────────┘\n");
     }
 };
 

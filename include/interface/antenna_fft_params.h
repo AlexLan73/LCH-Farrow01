@@ -21,12 +21,14 @@ namespace antenna_fft {
  */
 struct FFTMaxResult {
     size_t index_point;    // Индекс точки в спектре (после fftshift)
+    float real;            // Вещественная часть комплексного значения
+    float imag;            // Мнимая часть комплексного значения
     float amplitude;       // Амплитуда (magnitude)
     float phase;           // Фаза в градусах
     
-    FFTMaxResult() : index_point(0), amplitude(0.0f), phase(0.0f) {}
-    FFTMaxResult(size_t idx, float amp, float ph) 
-        : index_point(idx), amplitude(amp), phase(ph) {}
+    FFTMaxResult() : index_point(0), real(0.0f), imag(0.0f), amplitude(0.0f), phase(0.0f) {}
+    FFTMaxResult(size_t idx, float re, float im, float amp, float ph) 
+        : index_point(idx), real(re), imag(im), amplitude(amp), phase(ph) {}
 };
 
 /**
@@ -37,13 +39,18 @@ struct FFTResult {
     size_t v_fft;                              // Количество точек в FFT (out_count_points_fft)
     std::vector<FFTMaxResult> max_values;     // Вектор из 3-5 максимальных значений
     
+    // Результаты параболической интерполяции (для главного максимума)
+    float freq_offset;                         // Смещение частоты в долях бина (-0.5..+0.5)
+    float refined_frequency;                   // Уточнённая частота в Гц (рассчитанная)
+    
     // Признаки задачи для масштабируемости
     std::string task_id;                       // Идентификатор задачи
     std::string module_name;                   // Имя модуля
     
-    FFTResult() : v_fft(0) {}
+    FFTResult() : v_fft(0), freq_offset(0.0f), refined_frequency(0.0f) {}
     FFTResult(size_t fft_size, const std::string& task = "", const std::string& module = "")
-        : v_fft(fft_size), task_id(task), module_name(module) {}
+        : v_fft(fft_size), freq_offset(0.0f), refined_frequency(0.0f), 
+          task_id(task), module_name(module) {}
 };
 
 /**

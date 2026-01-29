@@ -1,0 +1,93 @@
+Цель: Переделать antenna_fft_proc_max.xxx  файлы что бы выводились значениям на каждый луч
+    1. массмив индекс, вущественная, мнимая, амплитуда (огибающая), фаза
+    2. расчеиное значение частоты (точка перегиба) парабылы, и если можно фазу
+
+- в kernal когда нйдет максимумы, то по 3 максимальным значениям нужно
+представить параболическую интерполяционную функцию и найти перегиб. 
+от туда найти сообветственную частоту и если получится расчитать фазу
+
+вот пример расчета может поможет ускорить
+
+__kernel void parabolic_3point_interpolation(
+    __global const float* restrict magnitudes,
+    __global const int* restrict peak_indices,
+    __global float* restrict peak_offsets,
+    __global float* restrict peak_magnitudes,
+    int spectrum_size,
+    int num_beams,
+    int total_peaks)
+{
+    int peak_id = get_global_id(0);
+    if (peak_id >= total_peaks) return;
+    
+    // Определить луч и индекс пика (упрощённо)
+    int beam = peak_id / spectrum_size;
+    int center_idx = peak_indices[peak_id];
+    
+    // Граничная проверка (нужны точки -1, 0, +1)
+    if (center_idx <= 0 || center_idx >= spectrum_size - 1) {
+        peak_offsets[peak_id] = 0.0f;
+        peak_magnitudes[peak_id] = magnitudes[beam * spectrum_size + center_idx];
+        return;
+    }
+    
+    // Три соседние точки из спектра
+    int base_idx = beam * spectrum_size;
+    float y_left   = magnitudes[base_idx + center_idx - 1];
+    float y_center = magnitudes[base_idx + center_idx];
+    float y_right  = magnitudes[base_idx + center_idx + 1];
+    
+    // Три-точечная параболическая интерполяция
+    // p = 0.5 × (y₋₁ - y₁) / (y₋₁ - 2y₀ + y₁)
+    float denom = y_left - 2.0f * y_center + y_right;
+    float offset = 0.0f;
+    float refined_magnitude = y_center;
+    
+    if (fabs(denom) > 1e-10f) {
+        // Смещение вершины от центра (в долях бина)
+        offset = 0.5f * (y_left - y_right) / denom;
+        
+        // Уточнённая магнитуда на вершине
+        refined_magnitude = y_center - 0.25f * (y_left - y_right) * offset;
+    }
+    
+    // Записать результаты
+    peak_offsets[peak_id] = offset;
+    peak_magnitudes[peak_id] = refined_magnitude;
+}
+
+
+1. 
+маленько не так 
+- таких структур должно быть по солличеству запрашенных максимальных точек 3,5,7..т
+struct FFTMaxResult {
+    size_t index_point;        // Индекс точки в спектре
+    float real;                // NEW: Вещественная часть
+    float imag;                // NEW: Мнимая часть  
+    float amplitude;           // Амплитуда (magnitude)
+    float phase;               // Фаза в градусах
+}; 
+и только по одному значению в расчитанные
+    float частота;  // расчетная частота
+    float фаза;   // расчетная фаза если можно !!! если нет поле убераем
+
+в связи с этим наверно должна быть структура
+struct FFTMaxResultParabala(- придумай сама) [
+   vector<FFTMaxResult> ...;
+   float частота;    
+   float фаза;   
+]
+
+2. Может в kernel и структура то же привести к такой записи! 
+ - получается для работы нам нужны только частота, фаза
+ - а   vector<FFTMaxResult> - для проверки 
+ Нам нужна только 1 точка! точка Перегиба! и значения float freq_offset, float refined_amplitude 
+  считать только для ее.
+
+3. немного не так
+Обновить методы вывода для новых полей:
+3.1. выведи значения частота, фаза
+3.2.
+ printf("  ║  Peak  │  Index  │  Amplitude  │  Phase │     Re      │     Im       ║\n");  - то что есть просто добавить и поменять местами
+
+4. в соответствии изменениям 
