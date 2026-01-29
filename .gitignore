@@ -13,7 +13,7 @@ x64/
 CMakeFiles/
 #cmake_install.cmake
 Makefile
-#*.cmake
+*.cmake
 
 ################################################################################
 # CMake Presets (personal build configuration)
@@ -23,7 +23,7 @@ CMakeUserPresets.json
 #CMakeLists.txt
 
 # IDE
-.vscode/
+.vscode
 .vscode/tasks.json
 .vscode/launch.json
 .vscode/settings.json
