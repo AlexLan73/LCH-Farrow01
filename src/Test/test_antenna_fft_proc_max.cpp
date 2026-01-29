@@ -316,7 +316,12 @@ void test_process_new_large() {
         std::cout << "\n✅ Первый вызов: " << result1.results.size() << " beams processed\n";
         
         // Вывести профилирование первого вызова
-        printer.PrintProfiling(processor.GetLastProfilingResults());
+        if(NUM_BEAMS <10){
+            printer.PrintResults(result1, MAX_PEAKS_COUNT);
+        }else{
+            printer.PrintProfiling(processor.GetLastProfilingResults());
+        }
+        
         auto prof1 = processor.GetLastProfilingResults();
         total_fft_time_ms += prof1.fft_time_ms;
         total_total_time_ms += prof1.total_time_ms;
